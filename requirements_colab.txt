@@ -1,0 +1,17 @@
+datasets==2.19.1
+faiss-gpu  # Use faiss-cpu for CPU-only environments
+gensim==4.3.3
+hqq==0.2.2
+mauve-text==0.4.0
+numpy==1.26.4
+pandas==2.2.3
+rouge-score==0.1.2
+safetensors==0.4.5
+scikit-learn==1.5.2
+sentence-transformers==3.3.0
+spacy==3.7.6
+torch==2.5.1
+tqdm==4.67.0
+transformers==4.46.2
+accelerate  # For device_map="auto"
+bitsandbytes  # For quantization (Linux/GPU only)
