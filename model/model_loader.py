@@ -57,13 +57,31 @@ class ModelLoader:
             model_kwargs = {
                 'pretrained_model_name_or_path': self.model_name,
                 'quantization_config': bnb_config,
+                'device_map': 'auto',  # Auto-assign model layers to available devices (GPU/CPU)
             }
-        
-            if model_type == "seq2seq":
-                model_kwargs['device_map'] = 'auto'
         
             self.model = model_loader_function.from_pretrained(**model_kwargs)
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, padding_side='left')
+            
+            # Log model loading info
+            quant_status = quant_type if quant_type and bnb_config else "No quantization"
+            print(f"✓ Loaded {model_type} model: {self.model_name}")
+            print(f"  - Quantization: {quant_status}")
+            
+            # Check device placement
+            if hasattr(self.model, 'hf_device_map'):
+                devices = set(self.model.hf_device_map.values())
+                if any('cuda' in str(d) for d in devices):
+                    gpu_devices = [d for d in devices if 'cuda' in str(d)]
+                    print(f"  - Device: GPU {gpu_devices}")
+                    if torch.cuda.is_available():
+                        memory_allocated = torch.cuda.memory_allocated(0) / 1024**3
+                        print(f"  - GPU Memory: {memory_allocated:.2f} GB allocated")
+                else:
+                    print(f"  - Device: {devices}")
+            else:
+                device_info = next(self.model.parameters()).device if hasattr(self.model, 'parameters') else 'Unknown'
+                print(f"  - Device: {device_info}")
             
         else:
             # Mixtral-8x7B requires special handling with offloading

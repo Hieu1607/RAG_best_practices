@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument('--dataset', default='truthfulqa', type=str, help='Dataset to evaluate on') 
     parser.add_argument('--output-dir', default='outputs', type=str, help='Output directory')
     parser.add_argument('--seed', default=42, type=int, help='Random seed')
+    parser.add_argument('--quant', default=None, type=str, choices=['4bit', '8bit', None], help='Quantization type (4bit, 8bit, or None)')
     return parser.parse_args()
 
 # Set random seed
@@ -125,9 +126,17 @@ if __name__ == "__main__":
         
         evaluations = {}
         for name, config in configs.items():
-            # Initialize model loaders (quantization disabled on Windows)
-            model_loader_generation = ModelLoader(config['generation_model_name'], 'causal', quant_type=None)
-            model_loader_seq2seq = ModelLoader(config['seq2seq_model_name'], 'seq2seq', quant_type=None)
+            print(f"\n{'='*60}")
+            print(f"Configuration: {name}")
+            print(f"Quantization: {args.quant if args.quant else 'None'}")
+            print(f"GPU Available: {torch.cuda.is_available()}")
+            if torch.cuda.is_available():
+                print(f"GPU Name: {torch.cuda.get_device_name(0)}")
+            print(f"{'='*60}\n")
+            
+            # Initialize model loaders with optional quantization
+            model_loader_generation = ModelLoader(config['generation_model_name'], 'causal', quant_type=args.quant)
+            model_loader_seq2seq = ModelLoader(config['seq2seq_model_name'], 'seq2seq', quant_type=args.quant)
             
             # Load knowledge base
             if config['ralm']['icl_kb']:
