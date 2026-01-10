@@ -2,27 +2,27 @@
 # Focused set aligned with common Kaggle wheels to avoid resolver conflicts.
 
 # Core
-torch==2.5.1
-transformers==4.46.2
-sentence-transformers==3.3.0
-safetensors==0.4.5
+torch
+transformers
+sentence-transformers
+safetensors
 accelerate
 
 # Retrieval and NLP
 # FAISS: Kaggle pip provides CPU wheels; GPU wheels are not available.
 faiss-cpu
-spacy==3.7.6
+spacy
 
 # Data and utilities
-pandas==2.2.3
-numpy==1.26.4
-scikit-learn==1.5.2
-tqdm==4.67.0
+pandas
+numpy
+scikit-learn
+tqdm
 
 # Evaluation and datasets
-mauve-text==0.4.0
-rouge-score==0.1.2
-datasets==2.19.1
+mauve-text
+rouge-score
+datasets
 
 # Topic modeling helpers
-gensim==4.3.3
+gensim
