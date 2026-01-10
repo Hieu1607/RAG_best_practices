@@ -1,27 +1,28 @@
-﻿# Minimal dependencies for RAG_best_practices (PyTorch-based)
-# Versions preserved from existing file where present; only necessary packages kept.
+﻿# Minimal dependencies for RAG_best_practices (Kaggle-friendly)
+# Focused set aligned with common Kaggle wheels to avoid resolver conflicts.
 
 # Core
-torch==2.9.0
-transformers==4.57.3
-sentence-transformers==5.2.0
-safetensors==0.7.0
+torch==2.5.1
+transformers==4.46.2
+sentence-transformers==3.3.0
+safetensors==0.4.5
+accelerate
 
 # Retrieval and NLP
-faiss-cpu==1.13.2
-spacy==3.8.11
-en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85
+# Prefer GPU FAISS on Kaggle; switch to faiss-cpu if running CPU-only.
+faiss-gpu
+spacy==3.7.6
 
 # Data and utilities
-pandas==2.2.2
-numpy==2.4.0
-scikit-learn==1.6.1
-tqdm==4.67.1
+pandas==2.2.3
+numpy==1.26.4
+scikit-learn==1.5.2
+tqdm==4.67.0
 
 # Evaluation and datasets
 mauve-text==0.4.0
 rouge-score==0.1.2
-datasets==4.0.0
+datasets==2.19.1
 
 # Topic modeling helpers
-gensim==4.4.0
+gensim==4.3.3
