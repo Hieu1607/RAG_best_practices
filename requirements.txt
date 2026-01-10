@@ -2,7 +2,7 @@
 # Versions preserved from existing file where present; only necessary packages kept.
 
 # Core
-torch==2.9.0+cu126
+torch==2.9.0
 transformers==4.57.3
 sentence-transformers==5.2.0
 safetensors==0.7.0
