@@ -9,8 +9,8 @@ safetensors==0.4.5
 accelerate
 
 # Retrieval and NLP
-# Prefer GPU FAISS on Kaggle; switch to faiss-cpu if running CPU-only.
-faiss-gpu
+# FAISS: Kaggle pip provides CPU wheels; GPU wheels are not available.
+faiss-cpu
 spacy==3.7.6
 
 # Data and utilities
