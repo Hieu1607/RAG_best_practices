@@ -70,6 +70,14 @@ base_config = {
     ```bash
     pip install -r requirements.txt
     ```
+
+    Note: The codebase uses PyTorch (torch) only. TensorFlow/keras entries in `requirements.txt` are not required to run this project and may trigger GPU/XLA warnings on local machines. To avoid TensorFlow installation and keep dependency versions unchanged, you can install the lean set from `requirements_colab.txt` instead:
+
+    ```bash
+    pip install -r requirements_colab.txt
+    ```
+
+    This preserves the specified versions while installing only the PyTorch-centric packages used by the code.
 3. **Download Knowledge Sources**:
 
     Download the necessary knowledge base files from the provided [Google Drive link](https://drive.google.com/drive/folders/1_-2PHI0-Wz1VjnW5Yvy5Ne9C7mMWk1nf?usp=drive_link).

@@ -32,17 +32,28 @@ class ModelLoader:
             is_windows = platform.system() == 'Windows'
             has_cuda = torch.cuda.is_available()
             
-            if quant_type and not is_windows and has_cuda:
-                try:
-                    if quant_type == '8bit':
-                        bnb_config = BitsAndBytesConfig(load_in_8bit=True, bnb_8bit_compute_dtype=torch.float16)
-                    elif quant_type == '4bit':
-                        bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
-                except Exception as e:
-                    print(f"Warning: Quantization failed ({e}). Loading model without quantization.")
-                    bnb_config = None
-            elif is_windows:
-                print(f"Info: Running on Windows. Quantization disabled. Loading {model_type} model without quantization.")
+            if quant_type:
+                print(f"Quantization requested: {quant_type}")
+                
+                if is_windows:
+                    print(f"⚠️  Warning: Running on Windows. Quantization is not supported due to bitsandbytes compatibility.")
+                    print(f"   Loading {model_type} model without quantization.")
+                elif not has_cuda:
+                    print(f"⚠️  Warning: CUDA not available. Quantization requires GPU.")
+                    print(f"   Loading {model_type} model without quantization.")
+                    print(f"   Tip: On Colab, go to Runtime > Change runtime type > Hardware accelerator > GPU")
+                else:
+                    try:
+                        print(f"Initializing {quant_type} quantization with bitsandbytes...")
+                        if quant_type == '8bit':
+                            bnb_config = BitsAndBytesConfig(load_in_8bit=True, bnb_8bit_compute_dtype=torch.float16)
+                        elif quant_type == '4bit':
+                            bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
+                        print(f"✓ {quant_type} quantization config created successfully")
+                    except Exception as e:
+                        print(f"⚠️  Error: Quantization initialization failed: {e}")
+                        print(f"   Loading model without quantization.")
+                        bnb_config = None
         
             # Load the model based on the type
             model_loader_function = {
