@@ -22,14 +22,20 @@ class Retriever:
         embedding_model (SentenceTransformer): Model used for embedding the documents and queries.
     """
 
-    def __init__(self, index, doc_info, embedding_model_name, model_loader_seq2seq, index_titles):
-        """Initializes the Retriever class with necessary components.
+    def __init__(self, index, doc_info, embedding_model_name, model_loader_seq2seq, index_titles, index_icl=None, icl_info=None):
+        """Initializes the Retriever with all necessary components for document retrieval.
+
+        Sets up the embedding model, FAISS indices, and seq2seq model for query expansion.
+        Prepares the retriever to find relevant documents based on semantic similarity.
 
         Args:
-            index: FAISS index for fast retrieval.
-            doc_info (DataFrame): DataFrame containing info about embedded document; aligned indices with index embeddings.
-            documents (list): List of original documents.
-            embedding_model_name (str): Name of the sentence transformer model.
+            index (faiss.Index): Pre-built FAISS index containing document embeddings for similarity search.
+            doc_info (pd.DataFrame): Metadata about documents (text, IDs, etc.) aligned with index.
+            embedding_model_name (str): Name of the SentenceTransformer model (e.g., 'all-MiniLM-L6-v2').
+            model_loader_seq2seq (ModelLoader): Loader containing seq2seq model for query expansion.
+            index_titles (faiss.Index): FAISS index of document titles for filtering during query expansion.
+            index_icl (faiss.Index, optional): FAISS index for ICL examples (hybrid mode only).
+            icl_info (pd.DataFrame, optional): Metadata about ICL examples (hybrid mode only).
         """
         self.index = index
         self.doc_info = doc_info
@@ -37,6 +43,11 @@ class Retriever:
         self.embedding_model = SentenceTransformer(embedding_model_name).to(self.device)
         self.sent_info = None
         self.index_sents = None
+        
+        # Hybrid mode support
+        self.index_icl = index_icl
+        self.icl_info = icl_info
+        self.hybrid_mode = (index_icl is not None and icl_info is not None)
 
         self.model_seq2seq = model_loader_seq2seq.model
         self.tokenizer_seq2seq = model_loader_seq2seq.tokenizer
@@ -50,16 +61,16 @@ class Retriever:
         self.index_titles = index_titles
 
     def build_index(self, documents):
-        """
-        Builds a FAISS index from document embeddings for efficient similarity searches which
-        includes embedding document chunks and initializing a FAISS index with these embeddings.
+        """Builds a FAISS index from documents for fast similarity-based retrieval.
+
+        This method splits documents into sentences, generates embeddings for each sentence,
+        and creates a FAISS index optimized for cosine similarity search (Inner Product).
 
         Args:
-            chunk_size (int): The size of each text chunk in tokens.
-            overlap (int): The number of tokens that overlap between consecutive chunks.
+            documents (list of str): List of text documents to be indexed.
 
         Returns:
-            faiss.IndexFlatIP: The FAISS index containing the embeddings of the document chunks.
+            faiss.IndexFlatIP: FAISS index containing sentence embeddings ready for search.
         """
         embeddings = self.embed_sents(documents)
         index = faiss.IndexFlatIP(embeddings.shape[1])
@@ -68,20 +79,18 @@ class Retriever:
         return index
 
     def embed_sents(self, documents):
-        """
-        Generates embeddings for document chunks.
+        """Generates vector embeddings for all sentences in the given documents.
 
-        The process involves:
-        1. Preparing chunks of documents:
-          - Splits each document into overlapping chunks based on `chunk_size` and `overlap`.
-        2. Encoding these chunks/documents into embeddings using the Sentence Transformer.
+        Processing pipeline:
+        1. Splits documents into individual sentences using prepare_sents()
+        2. Encodes each sentence into a dense vector using the SentenceTransformer model
+        3. Stores sentence metadata and embeddings in self.sent_info DataFrame
 
         Args:
-            chunk_size (int): Size of each chunk in tokens.
-            overlap (int): Overlap between consecutive chunks in tokens.
+            documents (list of str): List of text documents to process.
 
         Returns:
-            np.ndarray: An array of embeddings for all the documents (chunks).
+            np.ndarray: Array of embeddings with shape [num_sentences, embedding_dim].
         """
         self.sent_info = self.prepare_sents(documents)
         self.sent_info = pd.DataFrame(self.sent_info)
@@ -91,12 +100,18 @@ class Retriever:
         return np.array(embeddings)
     
     def prepare_sents(self, documents):
-        """
-        Splits each document into sentences and
-        creates dictionary for DataFrame associated with index.
+        """Splits documents into individual sentences and creates metadata for each sentence.
+
+        Uses Spacy's sentence tokenizer to parse documents into sentences, then assigns
+        a unique ID to each sentence for tracking purposes.
+
+        Args:
+            documents (list of str): List of text documents to split.
 
         Returns:
-            Tuple[List[str], List[dict]]: Tuple containing list of all sents and their info.
+            list of dict: List containing metadata for each sentence:
+                - 'text': The sentence text
+                - 'org_sent_id': Unique sentence ID for reference
         """
         sent_info = []
         sent_id = 0
@@ -112,18 +127,107 @@ class Retriever:
                 sent_id += 1
         return sent_info
 
-    def retrieve(self, query_batch, k, expand_query, k_titles, icl_kb_idx_batch=None, focus=None):
-        """
-        Retrieves the top-k most similar documents for each query in a batch of queries.
+    def retrieve(self, query_batch, k, expand_query, k_titles, icl_kb_idx_batch=None, focus=None, k_icl=0):
+        """Retrieves the top-k most relevant documents for each query using semantic similarity.
+
+        Main retrieval pipeline:
+        1. (Optional) Expands queries into keywords using seq2seq model and filters by titles
+        2. Encodes queries into embeddings
+        3. Searches FAISS index for most similar documents
+        4. (Optional) In hybrid mode, also retrieves ICL examples from separate index
+        5. (Optional) Refines results by finding most relevant sentences within documents
+        6. Formats and returns results with similarity scores
 
         Args:
-            query_batch (list of str): List of query strings.
-            k (int): Number of documents to retrieve.
+            query_batch (list of str): Batch of query strings to process.
+            k (int): Number of documents to retrieve per query.
+            expand_query (bool): Whether to expand queries into keywords for better retrieval.
+            k_titles (int): Number of titles to search when expanding queries.
+            icl_kb_idx_batch (list of int, optional): Indices to exclude (e.g., correct answers in ICL).
+            focus (int, optional): If set, refines search to top N sentences within retrieved docs.
+            k_icl (int, optional): Number of ICL examples to retrieve (hybrid mode only).
 
         Returns:
-            List[List[dict]]: List of lists containing formatted results of retrieved documents for each query.
+            list of list of dict: Nested list where each inner list contains retrieved results
+                for the corresponding query. Each result dict includes:
+                - 'text': Document/sentence text
+                - 'doc_id' or 'sent_id': Document or sentence identifier
+                - 'score': Similarity score
+                - 'correct_answer', 'incorrect_answer': (Only if icl_kb_idx_batch provided or hybrid mode)
+                - 'source': 'icl' or 'article' (Only in hybrid mode)
         """
 
+        if k == 0 and k_icl == 0:
+            return [[] for _ in query_batch]
+        
+        # Retrieve ICL examples if hybrid mode
+        icl_results_batch = []
+        if self.hybrid_mode and k_icl > 0:
+            icl_results_batch = self._retrieve_icl(query_batch, k_icl, icl_kb_idx_batch)
+        
+        # Retrieve articles (original logic)
+        article_results_batch = self._retrieve_articles(query_batch, k, expand_query, k_titles, icl_kb_idx_batch, focus)
+        
+        # Combine results: ICL first, then articles
+        if self.hybrid_mode and k_icl > 0:
+            combined_results = []
+            for icl_results, article_results in zip(icl_results_batch, article_results_batch):
+                combined_results.append(icl_results + article_results)
+            return combined_results
+        else:
+            return article_results_batch
+    
+    def _retrieve_icl(self, query_batch, k_icl, icl_kb_idx_batch):
+        """Retrieves ICL examples from the ICL index.
+        
+        Args:
+            query_batch (list of str): Batch of query strings.
+            k_icl (int): Number of ICL examples to retrieve.
+            icl_kb_idx_batch (list of int, optional): Indices to exclude.
+            
+        Returns:
+            list of list of dict: ICL examples for each query.
+        """
+        query_embeddings = self.embedding_model.encode(query_batch, show_progress_bar=False)
+        
+        results_batch = []
+        for i, query_embedding in enumerate(query_embeddings):
+            # Filter out current query if needed
+            if icl_kb_idx_batch:
+                all_ids = list(range(self.index_icl.ntotal))
+                all_ids.remove(icl_kb_idx_batch[i])
+                id_selector = IDSelectorArray(all_ids)
+                similarities, indices = self.index_icl.search(
+                    np.array([query_embedding]), k_icl, 
+                    params=SearchParameters(sel=id_selector)
+                )
+            else:
+                similarities, indices = self.index_icl.search(np.array([query_embedding]), k_icl)
+            
+            indices, similarities = indices[0], similarities[0]
+            
+            # Create results with 'source' tag
+            results = []
+            for idx, sim in zip(indices, similarities):
+                icl_item = self.icl_info.iloc[idx]
+                result = {
+                    "text": icl_item["text"],
+                    "doc_id": icl_item["org_doc_id"],
+                    "score": sim,
+                    "correct_answer": icl_item["correct_answer"],
+                    "incorrect_answer": icl_item["incorrect_answer"],
+                    "source": "icl"
+                }
+                results.append(result)
+            results_batch.append(results)
+        
+        return results_batch
+    
+    def _retrieve_articles(self, query_batch, k, expand_query, k_titles, icl_kb_idx_batch, focus):
+        """Retrieves articles from the main document index.
+        
+        This is the original retrieve logic for articles/documents.
+        """
         if k == 0:
             return [[] for _ in query_batch]
 
@@ -199,15 +303,24 @@ class Retriever:
 
 
     def _create_result(self, idx, score, icl_kb, focus):
-        """
-        Creates/builds a result dictionary of the retrieved document.
+        """Creates a formatted result dictionary for a retrieved document or sentence.
+
+        Builds a dictionary containing the retrieved text, its identifier, and similarity score.
+        The structure varies based on whether focus mode is enabled (sentence-level) or
+        disabled (document-level).
 
         Args:
-            idx (int): Index of the result/document in doc_info.
-            score (float): Similarity (& Diversity) score of document.
+            idx (int): Index of the document/sentence in doc_info or sent_info.
+            score (float): Similarity score from FAISS search.
+            icl_kb (bool): Whether to include correct/incorrect answers (for In-Context Learning).
+            focus (bool): Whether retrieving sentences (True) or full documents (False).
 
         Returns:
-            dict: Dictionary containing the document text and additional information.
+            dict: Result dictionary containing:
+                - 'text': The retrieved text
+                - 'doc_id' or 'sent_id': Identifier
+                - 'score': Similarity score
+                - 'correct_answer', 'incorrect_answer': (Only if icl_kb=True)
         """
         if focus: 
             # Retrieve the most relevant sentences from the retrieved documents

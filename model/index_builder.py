@@ -28,15 +28,33 @@ class IndexBuilder:
         corpus (list of gensim.matutils.SparseVector): Gensim corpus representing documents as bag-of-words vectors.
     """
 
-    def __init__(self, documents_df, embedding_model_name, expand_query, tokenizer_model_name, chunk_size, overlap, passes, icl_kb, multi_lingo):
+    def __init__(self, documents_df, embedding_model_name, expand_query, tokenizer_model_name, chunk_size, overlap, passes, icl_kb, multi_lingo, hybrid_kb=False, icl_df=None):
         """
         Initializes the IndexBuilder class with necessary components.
+        
+        Args:
+            hybrid_kb (bool): If True, builds separate indices for ICL examples and articles
+            icl_df (pd.DataFrame): DataFrame with ICL examples (required if hybrid_kb=True)
         """
         self.expand_query = expand_query
         self.icl_kb = icl_kb
         self.multi_lingo = multi_lingo
+        self.hybrid_kb = hybrid_kb
 
-        if self.icl_kb:
+        if self.hybrid_kb:
+            # Hybrid mode: build both ICL and articles indices
+            self.documents = documents_df['text_en'].tolist()
+            self.documents_de = documents_df['text_de'].tolist()
+            self.documents_fr = documents_df['text_fr'].tolist()
+            self.titles = documents_df['title_en'].tolist()
+            
+            # ICL data
+            if icl_df is None:
+                raise ValueError("hybrid_kb=True requires icl_df parameter")
+            self.icl_questions = icl_df['question'].tolist()
+            self.icl_best_answers = icl_df['best_answer'].tolist()
+            self.icl_incorrect_answers = icl_df['incorrect_answers'].tolist()
+        elif self.icl_kb:
             self.documents = documents_df['question'].tolist()
             self.titles = None
             self.best_answers = documents_df['best_answer'].tolist()
@@ -75,17 +93,37 @@ class IndexBuilder:
             passes (int): Number of training passes over the corpus.
 
         Returns:
-            tuple: A tuple containing the FAISS index and document information as a DataFrame.
+            tuple: For hybrid_kb=True returns (index_articles, index_icl, title_index, doc_info_articles, doc_info_icl)
+                   For hybrid_kb=False returns (index, title_index, doc_info)
         """
         self._check_chunk_size() # Ensure chunk size is appropriate for model's input capacity
 
-        self.doc_info = None
-        self.index = self._build_index()
-        self.title_index = None   
-        if self.expand_query:
-            self.title_index = self._build_title_index() if not self.icl_kb else None  
+        if self.hybrid_kb:
+            # Build separate indices for articles and ICL examples
+            self.doc_info = None
+            self.icl_info = None
+            
+            # Build articles index
+            self.index = self._build_index()
+            
+            # Build ICL index
+            self.index_icl = self._build_icl_index()
+            
+            # Build title index for articles (if expand_query enabled)
+            self.title_index = None
+            if self.expand_query:
+                self.title_index = self._build_title_index()
+            
+            return self.index, self.index_icl, self.title_index, self.doc_info, self.icl_info
+        else:
+            # Original behavior
+            self.doc_info = None
+            self.index = self._build_index()
+            self.title_index = None   
+            if self.expand_query:
+                self.title_index = self._build_title_index() if not self.icl_kb else None  
 
-        return self.index, self.title_index, self.doc_info
+            return self.index, self.title_index, self.doc_info
 
     def _check_chunk_size(self, tolerance_ratio=0.1):
         """
@@ -112,6 +150,33 @@ class IndexBuilder:
         title_index.add(title_embeddings)
 
         return title_index
+
+    def _build_icl_index(self):
+        """
+        Builds a FAISS index for ICL examples (questions from test data).
+        Used in hybrid_kb mode to retrieve similar question-answer pairs.
+
+        Returns:
+            faiss.IndexFlatIP: The FAISS index for ICL question embeddings.
+        """
+        icl_info = []
+        for i, (question, best_ans, incorrect_ans) in enumerate(zip(self.icl_questions, self.icl_best_answers, self.icl_incorrect_answers)):
+            icl_dict = {
+                "text": question,
+                "org_doc_id": i,
+                "correct_answer": best_ans,
+                "incorrect_answer": incorrect_ans[0] if incorrect_ans else ""
+            }
+            icl_info.append(icl_dict)
+        
+        self.icl_info = pd.DataFrame(icl_info)
+        icl_embeddings = self.embedding_model.encode(self.icl_info['text'].tolist(), show_progress_bar=True)
+        self.icl_info['embedding'] = icl_embeddings.tolist()
+        
+        icl_index = faiss.IndexFlatIP(icl_embeddings.shape[1])
+        icl_index.add(np.array(icl_embeddings))
+        
+        return icl_index
 
 
     def _build_index(self):

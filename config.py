@@ -31,7 +31,9 @@ base_config = {
         "kb_10K": False,
         "icl_kb": False,
         "icl_kb_incorrect": False,
-        "focus": False
+        "focus": False,
+        "hybrid_kb": False,
+        "top_k_icl": 0
         }
     }
 base_config["index_builder"]["tokenizer_model_name"] = base_config["generation_model_name"]
@@ -50,6 +52,75 @@ def generate_configurations(base_config, configs):
         complete_configs[key] = config
     return complete_configs
 
+
+# Comprehensive test suite for all feature combinations
+configs_test_suite = {
+    "1_Baseline": {
+        # No special features - pure RAG baseline
+    },
+    "2_ExpandQuery_Only": {
+        "ralm": {
+            "expand_query": True,
+            "top_k_docs": 3,
+            "top_k_titles": 5
+        }
+    },
+    "3_Focus_Only": {
+        "ralm": {
+            "top_k_docs": 10,
+            "focus": 3
+        }
+    },
+    "4_ICL_Only": {
+        "index_builder": {
+            "chunk_size": 200,
+            "overlap": 0,
+            "icl_kb": True
+        },
+        "ralm": {
+            "top_k_docs": 2,
+            "icl_kb": True,
+            "icl_kb_incorrect": False
+        }
+    },
+    "5_ExpandQuery_Focus": {
+        "ralm": {
+            "expand_query": True,
+            "top_k_docs": 10,
+            "top_k_titles": 5,
+            "focus": 3
+        }
+    },
+    "6_Focus_ICL": {
+        "index_builder": {
+            "chunk_size": 200,
+            "overlap": 0,
+            "icl_kb": True
+        },
+        "ralm": {
+            "top_k_docs": 10,
+            "focus": 3,
+            "icl_kb": True,
+            "icl_kb_incorrect": False
+        }
+    },
+    "7_Hybrid_All_Features": {
+        "index_builder": {
+            "hybrid_kb": True,
+            "chunk_size": 64,
+            "overlap": 8
+        },
+        "ralm": {
+            "hybrid_kb": True,
+            "top_k_icl": 2,
+            "top_k_docs": 10,
+            "focus": 3,
+            "expand_query": True,
+            "top_k_titles": 5,
+            "icl_kb_incorrect": False
+        }
+    }
+}
 
 configs_run1 = {
     "Base": {
@@ -90,8 +161,28 @@ configs_run2 = {
         "repeat_system_prompt": True,
         "focus": 80
         }
+    },
+    "Hybrid_ICL2_Doc3_Focus": {
+    "index_builder": {
+        "hybrid_kb": True,
+        "chunk_size": 64,
+        "overlap": 8
+    },
+    "ralm": {
+        "hybrid_kb": True,
+        "top_k_icl": 2,
+        "top_k_docs": 10,
+        "focus": 3,
+        "expand_query": True,
+        "top_k_titles": 5,
+        "icl_kb_incorrect": True
+        }
     }
 }
+
+
+
+configs_test_suite = generate_configurations(base_config, configs_test_suite)
 
 
 
