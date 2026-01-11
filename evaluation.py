@@ -4,6 +4,7 @@ import os
 import argparse
 from datetime import datetime
 import random
+import time
 
 import pandas as pd
 import numpy as np
@@ -25,6 +26,7 @@ def parse_args():
     parser.add_argument('--output-dir', default='outputs', type=str, help='Output directory')
     parser.add_argument('--seed', default=42, type=int, help='Random seed')
     parser.add_argument('--quant', default=None, type=str, choices=['4bit', '8bit', None], help='Quantization type (4bit, 8bit, or None)')
+    parser.add_argument('--num-samples', default=None, type=int, help='Number of test samples (for quick demo/testing)')
     return parser.parse_args()
 
 # Set random seed
@@ -91,6 +93,11 @@ if __name__ == "__main__":
         test_data['best_answer'] = test_data['best_answer'].apply(lambda x: [x] if x else [])
         test_data = test_data[(test_data['correct_answers'].apply(len) > 1) & (test_data['incorrect_answers'].apply(len) > 1)]
         test_data = test_data.reset_index(drop=True)
+        
+        # Limit samples if specified (for quick testing/demo)
+        if args.num_samples:
+            test_data = test_data.head(args.num_samples)
+            print(f"Demo mode: Using only {args.num_samples} questions from TruthfulQA")
 
     elif args.dataset == 'mmlu':
         mmlu = load_dataset("cais/mmlu", "all")
@@ -107,7 +114,13 @@ if __name__ == "__main__":
         test_data['best_answer'] = [[] for _ in range(len(test_data))]
         test_data = test_data[['question', 'best_answer', 'correct_answers', 'incorrect_answers']]
         test_data = test_data.reset_index(drop=True)
-        print(f"Loaded {len(test_data)} questions from MMLU dataset")
+        
+        # Limit samples if specified (for quick testing/demo)
+        if args.num_samples:
+            test_data = test_data.head(args.num_samples)
+            print(f"Demo mode: Using only {args.num_samples} questions from MMLU")
+        else:
+            print(f"Loaded {len(test_data)} questions from MMLU dataset")
 
     
     knowledge_base = pd.read_pickle('resources/articles_l3.pkl')
@@ -125,7 +138,10 @@ if __name__ == "__main__":
         first_run = True
         
         evaluations = {}
+        timing_results = {}
         for name, config in configs.items():
+            config_start_time = time.time()
+            
             print(f"\n{'='*60}")
             print(f"Configuration: {name}")
             print(f"Quantization: {args.quant if args.quant else 'None'}")
@@ -135,8 +151,11 @@ if __name__ == "__main__":
             print(f"{'='*60}\n")
             
             # Initialize model loaders with optional quantization
+            load_start = time.time()
             model_loader_generation = ModelLoader(config['generation_model_name'], 'causal', quant_type=args.quant)
             model_loader_seq2seq = ModelLoader(config['seq2seq_model_name'], 'seq2seq', quant_type=args.quant)
+            load_time = time.time() - load_start
+            print(f"Model loading time: {load_time:.2f}s")
             
             # Load knowledge base
             if config['ralm']['icl_kb']:
@@ -146,9 +165,18 @@ if __name__ == "__main__":
             else:
                 kb = knowledge_base
             
+            # Initialize RAG with timing
+            init_start = time.time()
             ralm, index_pre = initialize_rag(kb, config, model_loader_generation, model_loader_seq2seq, index_pre, same_index, first_run)
+            init_time = time.time() - init_start
+            print(f"RAG initialization time: {init_time:.2f}s")
+            
+            # Evaluate with timing
             print(f"Evaluating model: {name}")
+            eval_start = time.time()
             evaluations[name], mauve_score = ralm.evaluate(test_data)
+            eval_time = time.time() - eval_start
+            print(f"Evaluation time: {eval_time:.2f}s")
         
             del ralm
             del model_loader_generation
@@ -157,6 +185,22 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
             first_run = False
             
+            # Calculate total time for this config
+            config_total_time = time.time() - config_start_time
+            timing_results[name] = {
+                'model_load_time': load_time,
+                'rag_init_time': init_time,
+                'evaluation_time': eval_time,
+                'total_time': config_total_time
+            }
+            
+            print(f"\n{'─'*60}")
+            print(f"Configuration '{name}' completed in {config_total_time:.2f}s ({config_total_time/60:.2f} min)")
+            print(f"  - Model loading: {load_time:.2f}s")
+            print(f"  - RAG initialization: {init_time:.2f}s")
+            print(f"  - Evaluation: {eval_time:.2f}s")
+            print(f"{'─'*60}\n")
+            
             # Save evaluation results
             evaluations[name].to_pickle(os.path.join(results_dir, f'evaluation_{name}.pkl'))
             with open(os.path.join(results_dir, f'config_{name}.json'), 'w') as f:
@@ -164,11 +208,25 @@ if __name__ == "__main__":
         
             results = mean_metrics_item(evaluations[name])
             results['mauve'] = mauve_score
+            results['timing'] = timing_results[name]
 
             with open(f"{results_dir}/eval_results_{name}.json", "w") as outfile: 
-                json.dump(results, outfile)   
+                json.dump(results, outfile, indent=4)   
             all_results[name] = results
         del index_pre
+        
+        # Save timing summary for this run
+        with open(f"{results_dir}/timing_summary.json", "w") as outfile:
+            json.dump(timing_results, outfile, indent=4)
                 
         with open(f"{results_dir}/eval_results_all.json", "w") as outfile: 
-            json.dump(all_results, outfile)   
+            json.dump(all_results, outfile, indent=4)
+        
+        # Print run summary
+        run_total_time = sum(t['total_time'] for t in timing_results.values())
+        print(f"\n{'='*60}")
+        print(f"Run {run} Summary:")
+        print(f"Total time: {run_total_time:.2f}s ({run_total_time/60:.2f} min)")
+        print(f"Configurations evaluated: {len(timing_results)}")
+        print(f"Average time per config: {run_total_time/len(timing_results):.2f}s")
+        print(f"{'='*60}\n")   

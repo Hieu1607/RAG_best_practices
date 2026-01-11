@@ -1,0 +1,3 @@
+[submodule "mixtral-offloading"]
+	path = mixtral-offloading
+	url = https://github.com/dvmazur/mixtral-offloading.git
