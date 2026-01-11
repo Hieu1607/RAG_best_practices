@@ -19,7 +19,7 @@ class RAG:
         system_prompt (str): A predefined prompt to prepend to each input.
     """
 
-    def __init__(self, retriever, language_model, system_prompt, repeat_system_prompt, top_k_docs, expand_query, top_k_titles, stride, query_len, do_sample, temperature, top_p, num_beams, max_new_tokens, batch_size, kb_10K, icl_kb, icl_kb_incorrect, focus):
+    def __init__(self, retriever, language_model, system_prompt, repeat_system_prompt, top_k_docs, expand_query, top_k_titles, stride, query_len, do_sample, temperature, top_p, num_beams, max_new_tokens, batch_size, kb_10K, icl_kb, icl_kb_incorrect, focus, hybrid_kb=False, top_k_icl=0):
         self.retriever = retriever
         self.language_model = language_model
 
@@ -30,7 +30,8 @@ class RAG:
             "k": top_k_docs,
             "expand_query": expand_query,
             "k_titles": top_k_titles,
-            "focus": focus
+            "focus": focus,
+            "k_icl": top_k_icl  # Add k_icl for hybrid mode
         }
 
         self.do_sample = do_sample
@@ -44,12 +45,59 @@ class RAG:
         self.Kb_10K = kb_10K
         self.icl_kb = icl_kb
         self.icl_kb_incorrect = icl_kb_incorrect
-        self.focus= focus
+        self.focus = focus
+        self.hybrid_kb = hybrid_kb
+        self.top_k_icl = top_k_icl
 
     def _prompt_template(self, query, docs_text, docs_correct_answer, docs_incorrect_answer):
         if docs_text:
+            # Hybrid mode: separate ICL examples and articles
+            if self.hybrid_kb:
+                # Separate ICL and article docs
+                icl_docs = []
+                article_docs = []
+                icl_correct = []
+                icl_incorrect = []
+                
+                for i, doc_text in enumerate(docs_text):
+                    # Check if doc has 'source' marker (from retriever)
+                    # In hybrid mode, first k_icl docs are ICL, rest are articles
+                    if i < self.top_k_icl:
+                        icl_docs.append(doc_text)
+                        if docs_correct_answer:
+                            icl_correct.append(docs_correct_answer[i])
+                        if docs_incorrect_answer:
+                            icl_incorrect.append(docs_incorrect_answer[i])
+                    else:
+                        article_docs.append(doc_text)
+                
+                # Build prompt with two sections
+                system_prompt = self.system_prompt if self.system_prompt else ""
+                
+                # ICL examples section
+                icl_section = ""
+                if icl_docs:
+                    icl_section = " considering these examples\n"
+                    if self.icl_kb_incorrect and icl_incorrect:
+                        icl_section += "\n".join("- Question:" + question + ", Correct Answer:" + str(correct) + "\n- Question:" + question + ", Incorrect Answer:" + str(incorrect) 
+                                                for question, correct, incorrect in zip(icl_docs, icl_correct, icl_incorrect))
+                    else:
+                        icl_section += "\n".join("- Question:" + question + ", Correct Answer:" + str(correct) 
+                                                for question, correct in zip(icl_docs, icl_correct))
+                    icl_section += "\n---\n"
+                
+                # Articles section
+                article_section = ""
+                if article_docs:
+                    article_section = "and these information\n"
+                    article_section += "\n".join("- " + re.sub(r'[\t\n\r\f\v]', ' ', doc) for doc in article_docs)
+                    article_section += "\n---\n"
+                
+                repeat_prompt = self.system_prompt + "\n" if self.repeat_system_prompt else ""
+                rag_prompt = f"{system_prompt}{icl_section}{article_section}{repeat_prompt}Question:{query}, Correct Answer:"
+            
             # Format the prompt based on the type of knowledge base
-            if not self.icl_kb:
+            elif not self.icl_kb:
                 system_prompt = self.system_prompt + " considering these information\n" if self.system_prompt else ""
                 repeat_prompt = self.system_prompt + "\n" if self.repeat_system_prompt else ""
                 docs_str = "\n".join("- " + re.sub(r'[\t\n\r\f\v]', ' ', doc) for doc in docs_text) + "\n---\n"
@@ -179,9 +227,12 @@ class RAG:
         for docs, query in zip(retrieved_docs, queries):
             docs_text = [doc['text'] for doc in docs]
             docs_correct_answer, docs_incorrect_answer = None, None
-            if self.icl_kb:
-                docs_correct_answer = [doc['correct_answer'] for doc in docs]
-                docs_incorrect_answer = [doc['incorrect_answer'] for doc in docs]
+            
+            # Extract correct/incorrect answers if available (ICL KB or hybrid mode)
+            if self.icl_kb or self.hybrid_kb:
+                docs_correct_answer = [doc.get('correct_answer', '') for doc in docs]
+                docs_incorrect_answer = [doc.get('incorrect_answer', '') for doc in docs]
+            
             formatted_input = self._prompt_template(query, docs_text, docs_correct_answer, docs_incorrect_answer)
             input_texts.append(formatted_input)
         return input_texts

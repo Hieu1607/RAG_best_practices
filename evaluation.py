@@ -17,7 +17,7 @@ from model.model_loader import ModelLoader
 from model.rag import RAG
 from model.retriever import Retriever
 
-from config import configs_run1, configs_run2
+from config import configs_run1, configs_run2, configs_test_suite
 
 # Argument parsing
 def parse_args():
@@ -27,6 +27,8 @@ def parse_args():
     parser.add_argument('--seed', default=42, type=int, help='Random seed')
     parser.add_argument('--quant', default=None, type=str, choices=['4bit', '8bit', None], help='Quantization type (4bit, 8bit, or None)')
     parser.add_argument('--num-samples', default=None, type=int, help='Number of test samples (for quick demo/testing)')
+    parser.add_argument('--config-set', default='test_suite', type=str, choices=['test_suite', 'run1', 'run2'], 
+                        help='Which config set to run: test_suite (all combinations), run1, or run2')
     return parser.parse_args()
 
 # Set random seed
@@ -42,27 +44,79 @@ def set_random_seed(seed):
     torch.backends.cudnn.benchmark = False
     
 # Initialize index builder
-def initialize_index_builder(knowledge_base, config):
-    index_builder = IndexBuilder(knowledge_base, config['embedding_model_name'], config['ralm']['expand_query'], **config['index_builder'])
-    return index_builder.initialize_components()
+def initialize_index_builder(knowledge_base, config, icl_data=None):
+    """Initialize index builder with optional hybrid mode support.
+    
+    Args:
+        knowledge_base: Main knowledge base (articles)
+        config: Configuration dict
+        icl_data: ICL examples DataFrame (for hybrid mode)
+    """
+    hybrid_kb = config['index_builder'].get('hybrid_kb', False)
+    
+    if hybrid_kb:
+        # Hybrid mode: pass both knowledge bases
+        index_builder = IndexBuilder(
+            knowledge_base, 
+            config['embedding_model_name'], 
+            config['ralm']['expand_query'], 
+            **{k: v for k, v in config['index_builder'].items() if k not in ['hybrid_kb']},
+            hybrid_kb=True,
+            icl_df=icl_data
+        )
+        return index_builder.initialize_components()  # Returns 5 items
+    else:
+        # Normal mode
+        index_builder = IndexBuilder(
+            knowledge_base, 
+            config['embedding_model_name'], 
+            config['ralm']['expand_query'], 
+            **config['index_builder']
+        )
+        return index_builder.initialize_components()  # Returns 3 items
 
 # Initialize RAG model
-def initialize_rag(knowledge_base, config, model_loader_generation, model_loader_seq2seq, index_pre, same_index, first_run):
+def initialize_rag(knowledge_base, config, model_loader_generation, model_loader_seq2seq, index_pre, same_index, first_run, icl_data=None):
     build_index = not same_index or first_run
+    hybrid_kb = config['index_builder'].get('hybrid_kb', False)
 
     # Initialize index builder if needed
     if build_index:
-        index, index_titles, doc_info = initialize_index_builder(knowledge_base, config)
+        if hybrid_kb:
+            # Hybrid mode: returns 5 items
+            index, index_icl, index_titles, doc_info, icl_info = initialize_index_builder(knowledge_base, config, icl_data)
+        else:
+            # Normal mode: returns 3 items
+            index, index_titles, doc_info = initialize_index_builder(knowledge_base, config)
+            index_icl, icl_info = None, None
     else:
-        index, index_titles, doc_info = index_pre[0], index_pre[1], index_pre[2]
-    retriever = Retriever(index, doc_info, config['embedding_model_name'], model_loader_seq2seq, index_titles)
+        if hybrid_kb:
+            index, index_icl, index_titles, doc_info, icl_info = index_pre
+        else:
+            index, index_titles, doc_info = index_pre
+            index_icl, icl_info = None, None
+    
+    # Initialize retriever with hybrid mode support
+    retriever = Retriever(
+        index, doc_info, config['embedding_model_name'], 
+        model_loader_seq2seq, index_titles, 
+        index_icl=index_icl, icl_info=icl_info
+    )
+    
     language_model = LanguageModel(model_loader_generation, config['is_chat_model'], config['instruct_tokens'])
+    
     if not same_index:
         del index, index_titles, doc_info
+        if hybrid_kb:
+            del index_icl, icl_info
         gc.collect()
         index_pre = None
     else:
-        index_pre = (index, index_titles, doc_info)
+        if hybrid_kb:
+            index_pre = (index, index_icl, index_titles, doc_info, icl_info)
+        else:
+            index_pre = (index, index_titles, doc_info)
+    
     return RAG(retriever, language_model, **config['ralm']), index_pre
 
     
@@ -126,8 +180,18 @@ if __name__ == "__main__":
     knowledge_base = pd.read_pickle('resources/articles_l3.pkl')
     all_results = {}
 
+    # Select config set based on argument
+    if args.config_set == 'test_suite':
+        config_runs = [(configs_test_suite, 'test_suite')]
+    elif args.config_set == 'run1':
+        config_runs = [(configs_run1, 1)]
+    elif args.config_set == 'run2':
+        config_runs = [(configs_run2, 2)]
+    else:
+        config_runs = [(configs_run1, 1), (configs_run2, 2)]
+
     # Evaluate all configurations
-    for configs, run in zip([configs_run1, configs_run2],[1, 2]):
+    for configs, run in config_runs:
         time = datetime.now().strftime("%m-%d_%H-%M")
         results_dir = f'{args.output_dir}/{args.dataset}/run{run}_{time}'
 
@@ -165,9 +229,12 @@ if __name__ == "__main__":
             else:
                 kb = knowledge_base
             
+            # For hybrid mode, pass both kb and test_data as ICL
+            icl_data = test_data if config['index_builder'].get('hybrid_kb', False) else None
+            
             # Initialize RAG with timing
             init_start = time.time()
-            ralm, index_pre = initialize_rag(kb, config, model_loader_generation, model_loader_seq2seq, index_pre, same_index, first_run)
+            ralm, index_pre = initialize_rag(kb, config, model_loader_generation, model_loader_seq2seq, index_pre, same_index, first_run, icl_data)
             init_time = time.time() - init_start
             print(f"RAG initialization time: {init_time:.2f}s")
             

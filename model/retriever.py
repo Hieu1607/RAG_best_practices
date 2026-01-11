@@ -22,7 +22,7 @@ class Retriever:
         embedding_model (SentenceTransformer): Model used for embedding the documents and queries.
     """
 
-    def __init__(self, index, doc_info, embedding_model_name, model_loader_seq2seq, index_titles):
+    def __init__(self, index, doc_info, embedding_model_name, model_loader_seq2seq, index_titles, index_icl=None, icl_info=None):
         """Initializes the Retriever with all necessary components for document retrieval.
 
         Sets up the embedding model, FAISS indices, and seq2seq model for query expansion.
@@ -34,6 +34,8 @@ class Retriever:
             embedding_model_name (str): Name of the SentenceTransformer model (e.g., 'all-MiniLM-L6-v2').
             model_loader_seq2seq (ModelLoader): Loader containing seq2seq model for query expansion.
             index_titles (faiss.Index): FAISS index of document titles for filtering during query expansion.
+            index_icl (faiss.Index, optional): FAISS index for ICL examples (hybrid mode only).
+            icl_info (pd.DataFrame, optional): Metadata about ICL examples (hybrid mode only).
         """
         self.index = index
         self.doc_info = doc_info
@@ -41,6 +43,11 @@ class Retriever:
         self.embedding_model = SentenceTransformer(embedding_model_name).to(self.device)
         self.sent_info = None
         self.index_sents = None
+        
+        # Hybrid mode support
+        self.index_icl = index_icl
+        self.icl_info = icl_info
+        self.hybrid_mode = (index_icl is not None and icl_info is not None)
 
         self.model_seq2seq = model_loader_seq2seq.model
         self.tokenizer_seq2seq = model_loader_seq2seq.tokenizer
@@ -120,15 +127,16 @@ class Retriever:
                 sent_id += 1
         return sent_info
 
-    def retrieve(self, query_batch, k, expand_query, k_titles, icl_kb_idx_batch=None, focus=None):
+    def retrieve(self, query_batch, k, expand_query, k_titles, icl_kb_idx_batch=None, focus=None, k_icl=0):
         """Retrieves the top-k most relevant documents for each query using semantic similarity.
 
         Main retrieval pipeline:
         1. (Optional) Expands queries into keywords using seq2seq model and filters by titles
         2. Encodes queries into embeddings
         3. Searches FAISS index for most similar documents
-        4. (Optional) Refines results by finding most relevant sentences within documents
-        5. Formats and returns results with similarity scores
+        4. (Optional) In hybrid mode, also retrieves ICL examples from separate index
+        5. (Optional) Refines results by finding most relevant sentences within documents
+        6. Formats and returns results with similarity scores
 
         Args:
             query_batch (list of str): Batch of query strings to process.
@@ -137,6 +145,7 @@ class Retriever:
             k_titles (int): Number of titles to search when expanding queries.
             icl_kb_idx_batch (list of int, optional): Indices to exclude (e.g., correct answers in ICL).
             focus (int, optional): If set, refines search to top N sentences within retrieved docs.
+            k_icl (int, optional): Number of ICL examples to retrieve (hybrid mode only).
 
         Returns:
             list of list of dict: Nested list where each inner list contains retrieved results
@@ -144,9 +153,81 @@ class Retriever:
                 - 'text': Document/sentence text
                 - 'doc_id' or 'sent_id': Document or sentence identifier
                 - 'score': Similarity score
-                - 'correct_answer', 'incorrect_answer': (Only if icl_kb_idx_batch provided)
+                - 'correct_answer', 'incorrect_answer': (Only if icl_kb_idx_batch provided or hybrid mode)
+                - 'source': 'icl' or 'article' (Only in hybrid mode)
         """
 
+        if k == 0 and k_icl == 0:
+            return [[] for _ in query_batch]
+        
+        # Retrieve ICL examples if hybrid mode
+        icl_results_batch = []
+        if self.hybrid_mode and k_icl > 0:
+            icl_results_batch = self._retrieve_icl(query_batch, k_icl, icl_kb_idx_batch)
+        
+        # Retrieve articles (original logic)
+        article_results_batch = self._retrieve_articles(query_batch, k, expand_query, k_titles, icl_kb_idx_batch, focus)
+        
+        # Combine results: ICL first, then articles
+        if self.hybrid_mode and k_icl > 0:
+            combined_results = []
+            for icl_results, article_results in zip(icl_results_batch, article_results_batch):
+                combined_results.append(icl_results + article_results)
+            return combined_results
+        else:
+            return article_results_batch
+    
+    def _retrieve_icl(self, query_batch, k_icl, icl_kb_idx_batch):
+        """Retrieves ICL examples from the ICL index.
+        
+        Args:
+            query_batch (list of str): Batch of query strings.
+            k_icl (int): Number of ICL examples to retrieve.
+            icl_kb_idx_batch (list of int, optional): Indices to exclude.
+            
+        Returns:
+            list of list of dict: ICL examples for each query.
+        """
+        query_embeddings = self.embedding_model.encode(query_batch, show_progress_bar=False)
+        
+        results_batch = []
+        for i, query_embedding in enumerate(query_embeddings):
+            # Filter out current query if needed
+            if icl_kb_idx_batch:
+                all_ids = list(range(self.index_icl.ntotal))
+                all_ids.remove(icl_kb_idx_batch[i])
+                id_selector = IDSelectorArray(all_ids)
+                similarities, indices = self.index_icl.search(
+                    np.array([query_embedding]), k_icl, 
+                    params=SearchParameters(sel=id_selector)
+                )
+            else:
+                similarities, indices = self.index_icl.search(np.array([query_embedding]), k_icl)
+            
+            indices, similarities = indices[0], similarities[0]
+            
+            # Create results with 'source' tag
+            results = []
+            for idx, sim in zip(indices, similarities):
+                icl_item = self.icl_info.iloc[idx]
+                result = {
+                    "text": icl_item["text"],
+                    "doc_id": icl_item["org_doc_id"],
+                    "score": sim,
+                    "correct_answer": icl_item["correct_answer"],
+                    "incorrect_answer": icl_item["incorrect_answer"],
+                    "source": "icl"
+                }
+                results.append(result)
+            results_batch.append(results)
+        
+        return results_batch
+    
+    def _retrieve_articles(self, query_batch, k, expand_query, k_titles, icl_kb_idx_batch, focus):
+        """Retrieves articles from the main document index.
+        
+        This is the original retrieve logic for articles/documents.
+        """
         if k == 0:
             return [[] for _ in query_batch]
 
