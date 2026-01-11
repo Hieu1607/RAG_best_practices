@@ -192,8 +192,8 @@ if __name__ == "__main__":
 
     # Evaluate all configurations
     for configs, run in config_runs:
-        time = datetime.now().strftime("%m-%d_%H-%M")
-        results_dir = f'{args.output_dir}/{args.dataset}/run{run}_{time}'
+        run_timestamp = datetime.now().strftime("%m-%d_%H-%M")
+        results_dir = f'{args.output_dir}/{args.dataset}/run{run}_{run_timestamp}'
 
         os.makedirs(results_dir, exist_ok=True)
         index_configs = [c['index_builder'] for c in configs.values()]
