@@ -205,10 +205,15 @@ class Retriever:
                 similarities, indices = self.index_icl.search(np.array([query_embedding]), k_icl)
             
             indices, similarities = indices[0], similarities[0]
-            
+
+            # Sanitize indices: remove -1 and out-of-bounds
+            total_icl = len(self.icl_info) if self.icl_info is not None else 0
+            valid_indices = [int(idx) for idx in indices if 0 <= int(idx) < total_icl]
+            valid_sims = [sim for idx, sim in zip(indices, similarities) if 0 <= int(idx) < total_icl]
+
             # Create results with 'source' tag
             results = []
-            for idx, sim in zip(indices, similarities):
+            for idx, sim in zip(valid_indices, valid_sims):
                 icl_item = self.icl_info.iloc[idx]
                 result = {
                     "text": icl_item["text"],
@@ -284,20 +289,33 @@ class Retriever:
             # Search the index for similar documents, retrieve a larger set of documents
             similarities, indices = self.index.search(np.array([query_embedding]), k, params=SearchParameters(sel=id_selector))
             indices, similarities = indices[0], similarities[0]
+
+            # Sanitize document indices
+            total_docs = len(self.doc_info) if self.doc_info is not None else 0
+            doc_indices = [int(idx) for idx in indices if 0 <= int(idx) < total_docs]
+            doc_sims = [sim for idx, sim in zip(indices, similarities) if 0 <= int(idx) < total_docs]
             
             # Focus on the most relevant sentences from the retrieved documents
             if focus:
-                docs = self.doc_info.loc[indices]["text"].tolist()
-                self.index_sents = self.build_index(docs)   
+                if not doc_indices:
+                    results_batch.append([])
+                    continue
+                docs = self.doc_info.iloc[doc_indices]["text"].tolist()
+                self.index_sents = self.build_index(docs)
                 similarities, indices = self.index_sents.search(np.array([query_embedding]), focus)
                 indices, similarities = indices[0], similarities[0]
+
+                # Sanitize sentence indices
+                total_sents = len(self.sent_info) if self.sent_info is not None else 0
+                sent_indices = [int(idx) for idx in indices if 0 <= int(idx) < total_sents]
+                sent_sims = [sim for idx, sim in zip(indices, similarities) if 0 <= int(idx) < total_sents]
 
             icl_kb = icl_kb_idx_batch!=None
             if focus:
                 # Retrieve the most relevant sentences from the retrieved documents
-                results_batch.append([self._create_result(idx, sim, icl_kb, focus) for idx, sim in zip(indices[:focus], similarities)])
+                results_batch.append([self._create_result(idx, sim, icl_kb, focus) for idx, sim in zip(sent_indices[:focus], sent_sims)])
             else:
-                results_batch.append([self._create_result(idx, sim, icl_kb, focus) for idx, sim in zip(indices[:k], similarities)])
+                results_batch.append([self._create_result(idx, sim, icl_kb, focus) for idx, sim in zip(doc_indices[:k], doc_sims)])
 
         return results_batch
 
