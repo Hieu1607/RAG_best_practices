@@ -1,6 +1,6 @@
 import torch
 import platform
-from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
 from transformers import AutoConfig
 
 class ModelLoader:
@@ -26,35 +26,6 @@ class ModelLoader:
         self.model_name = model_name
         self.model_type = model_type
         if self.model_name != 'mistralai/Mixtral-8x7B-Instruct-v0.1':
-            # Generate quantization configuration
-            # Disable quantization on Windows due to bitsandbytes compatibility issues
-            bnb_config = None
-            is_windows = platform.system() == 'Windows'
-            has_cuda = torch.cuda.is_available()
-            
-            if quant_type:
-                print(f"Quantization requested: {quant_type}")
-                
-                if is_windows:
-                    print(f"⚠️  Warning: Running on Windows. Quantization is not supported due to bitsandbytes compatibility.")
-                    print(f"   Loading {model_type} model without quantization.")
-                elif not has_cuda:
-                    print(f"⚠️  Warning: CUDA not available. Quantization requires GPU.")
-                    print(f"   Loading {model_type} model without quantization.")
-                    print(f"   Tip: On Colab, go to Runtime > Change runtime type > Hardware accelerator > GPU")
-                else:
-                    try:
-                        print(f"Initializing {quant_type} quantization with bitsandbytes...")
-                        if quant_type == '8bit':
-                            bnb_config = BitsAndBytesConfig(load_in_8bit=True, bnb_8bit_compute_dtype=torch.float16)
-                        elif quant_type == '4bit':
-                            bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
-                        print(f"✓ {quant_type} quantization config created successfully")
-                    except Exception as e:
-                        print(f"⚠️  Error: Quantization initialization failed: {e}")
-                        print(f"   Loading model without quantization.")
-                        bnb_config = None
-        
             # Load the model based on the type
             model_loader_function = {
                 'causal': AutoModelForCausalLM,
@@ -64,10 +35,14 @@ class ModelLoader:
             if not model_loader_function:
                 raise ValueError(f"Unsupported model type: {model_type}")
         
-            # Prepare kwargs for model loading
+            if quant_type:
+                print(f"⚠️  Quantization requested ({quant_type}), but disabled to avoid cuBLAS errors.")
+                print(f"   Loading {model_type} model with FP16 inference instead.")
+            
+            # Prepare kwargs for model loading with FP16 precision
             model_kwargs = {
                 'pretrained_model_name_or_path': self.model_name,
-                'quantization_config': bnb_config,
+                'torch_dtype': torch.float16,  # Use FP16 for reduced memory usage
                 'device_map': 'auto',  # Auto-assign model layers to available devices (GPU/CPU)
             }
         
