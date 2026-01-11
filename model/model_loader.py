@@ -50,9 +50,8 @@ class ModelLoader:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, padding_side='left')
             
             # Log model loading info
-            quant_status = quant_type if quant_type and bnb_config else "No quantization"
             print(f"✓ Loaded {model_type} model: {self.model_name}")
-            print(f"  - Quantization: {quant_status}")
+            print(f"  - Precision: FP16")
             
             # Check device placement
             if hasattr(self.model, 'hf_device_map'):
