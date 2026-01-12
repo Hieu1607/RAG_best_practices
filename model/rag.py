@@ -151,6 +151,9 @@ class RAG:
         Returns:
             Dict: Generated responses for each test entry.
         """
+        import torch
+        import gc
+        
         results_gen = {}
         for batch in tqdm(test_batches, desc="Calculating Generation"):
             batch_queries = [item['query'] for item in batch]
@@ -159,6 +162,11 @@ class RAG:
             for i, item in enumerate(batch):
                 query_id = item['query_id']
                 results_gen[query_id] = {'input_text': input_texts[i], 'generated_response': generated_responses[i]}
+            
+            # Aggressive memory cleanup after each batch
+            torch.cuda.empty_cache()
+            gc.collect()
+        
         return results_gen
 
 

@@ -6,6 +6,9 @@ from datetime import datetime
 import random
 import time
 
+# Set PyTorch CUDA memory configuration before importing torch
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
 import pandas as pd
 import numpy as np
 import torch

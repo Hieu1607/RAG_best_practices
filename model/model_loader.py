@@ -47,6 +47,12 @@ class ModelLoader:
             }
         
             self.model = model_loader_function.from_pretrained(**model_kwargs)
+            
+            # Enable gradient checkpointing to save memory during training/inference
+            if hasattr(self.model, 'gradient_checkpointing_enable'):
+                self.model.gradient_checkpointing_enable()
+                print(f"✓ Gradient checkpointing enabled for memory efficiency")
+            
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, padding_side='left')
             
             # Log model loading info
