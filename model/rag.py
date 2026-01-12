@@ -183,6 +183,9 @@ class RAG:
         Returns:
             list[str]: Generated responses.
         """
+        import torch
+        import gc
+        
         stride = self.stride if self.stride > 0 else self.max_new_tokens
 
         retrieval_kwargs = self.retrieval_kwargs
@@ -191,6 +194,10 @@ class RAG:
         # Retrieve documents
         docs_batch = self.retriever.retrieve(query_batch, **retrieval_kwargs)
         context_batch = self._format_context(query_batch, docs_batch)
+        
+        # Clear retrieval embeddings immediately
+        del docs_batch
+        torch.cuda.empty_cache()
 
         responses_enc = [[] for _ in query_batch]
 
@@ -203,6 +210,11 @@ class RAG:
             docs_batch = self.retriever.retrieve(query_reponse_batch, **retrieval_kwargs)
             # Format context
             _context_batch = self._format_context(query_batch, docs_batch)
+            
+            # Clear docs_batch immediately after formatting
+            del docs_batch
+            torch.cuda.empty_cache()
+            
             running_context_batch = [c+self.language_model.tokenizer.decode(r) for c, r in zip(_context_batch, responses_enc)]
             # Generate responses
             new_responses_str, _done_batch = self.language_model.generate(running_context_batch, self.do_sample, self.temperature, self.top_p, self.num_beams, max_new_tokens=stride)
@@ -215,9 +227,20 @@ class RAG:
                     new_response_enc = self.language_model.tokenizer.encode(new_response_str, add_special_tokens=False)
                     # Append the new response to the previous response
                     responses_enc[idx] = response_enc + new_response_enc
+            
+            # Aggressive cleanup after each stride iteration
+            del _context_batch, running_context_batch, new_responses_str, _done_batch, query_reponse_batch
+            torch.cuda.empty_cache()
+            gc.collect()
 
 
         responses_str = [self.language_model.tokenizer.decode(r, add_special_tokens=False) for r in responses_enc]
+        
+        # Final cleanup
+        del responses_enc
+        torch.cuda.empty_cache()
+        gc.collect()
+        
         return context_batch, responses_str
 
     def _format_context(self, queries, retrieved_docs):

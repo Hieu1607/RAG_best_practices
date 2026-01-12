@@ -51,24 +51,24 @@ class LanguageModel:
         """
         # Use no_grad for inference to save memory
         with torch.no_grad():
-            # Truncate context to max 512 tokens to reduce memory
+            # Truncate context to max 256 tokens to reduce memory (reduced from 512)
             context_batch_enc = self.tokenizer(
                 context_batch_str, 
                 return_tensors='pt', 
                 padding=True,
                 truncation=True,
-                max_length=512
+                max_length=256  # Reduced from 512
             ).to(self.device)
 
             # Memory-optimized generation settings
             generate_args = {
                 'input_ids': context_batch_enc['input_ids'],
                 'attention_mask': context_batch_enc['attention_mask'],
-                'max_new_tokens': min(max_new_tokens, 64),  # Cap at 64 tokens to reduce memory
+                'max_new_tokens': min(max_new_tokens, 32),  # Reduced from 64 to 32
                 'pad_token_id': self.pad_token_id,
                 'num_beams': 1,           # Force greedy decoding (no beam search)
                 'do_sample': False,       # Disable sampling for evaluation
-                'use_cache': True,        # Enable KV cache for efficiency
+                'use_cache': False,       # DISABLE cache to prevent accumulation
             }
 
             # Only apply sampling parameters if explicitly enabled and num_beams > 1
@@ -83,8 +83,17 @@ class LanguageModel:
             response_batch_str = [self.tokenizer.decode(response_enc, skip_special_tokens=True) for response_enc in response_batch_enc]
         
         # Clean up to free memory (outside torch.no_grad)
-        del context_batch_enc
+        del context_batch_enc, response_batch_enc
         del generate_args
+        
+        # Clear KV cache if it exists
+        if hasattr(self.model, 'model'):
+            if hasattr(self.model.model, 'layers'):
+                for layer in self.model.model.layers:
+                    if hasattr(layer, 'self_attn'):
+                        if hasattr(layer.self_attn, 'past_key_value'):
+                            layer.self_attn.past_key_value = None
+        
         torch.cuda.empty_cache()
         gc.collect()
         

@@ -27,7 +27,7 @@ base_config = {
         "top_p": 0.1,
         "num_beams": 1,
         "max_new_tokens": 25,
-        "batch_size": 2,
+        "batch_size": 1,
         "kb_10K": False,
         "icl_kb": False,
         "icl_kb_incorrect": False,

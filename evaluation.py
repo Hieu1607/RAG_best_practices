@@ -253,6 +253,12 @@ if __name__ == "__main__":
             del model_loader_seq2seq
             gc.collect()
             torch.cuda.empty_cache()
+            
+            # Force memory defragmentation
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.ipc_collect()
+            
             first_run = False
             
             # Calculate total time for this config
