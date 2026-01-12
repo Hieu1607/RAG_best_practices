@@ -1,4 +1,5 @@
 import torch
+import gc
 
 class LanguageModel:
     """
@@ -50,26 +51,41 @@ class LanguageModel:
         """
         context_batch_enc = self.tokenizer(context_batch_str, return_tensors='pt', padding=True).to(self.device)
 
+        # Memory-optimized generation settings
         generate_args = {
             'input_ids': context_batch_enc['input_ids'],
             'attention_mask': context_batch_enc['attention_mask'],
-            'max_new_tokens': max_new_tokens,
+            'max_new_tokens': min(max_new_tokens, 128),  # Cap at 128 tokens to reduce memory
             'pad_token_id': self.pad_token_id,
+            'num_beams': 1,           # Force greedy decoding (no beam search)
+            'do_sample': False,       # Disable sampling for evaluation
+            'use_cache': True,        # Enable KV cache for efficiency
         }
 
-        if do_sample:
-            generate_args['do_sample'] = do_sample
-            generate_args['temperature'] = temperature
-            generate_args['top_p'] = top_p
-            generate_args['num_beams'] = num_beams
+        # Only apply sampling parameters if explicitly enabled and num_beams > 1
+        # (though we're forcing num_beams=1 above for memory efficiency)
+        # if do_sample and num_beams > 1:
+        #     generate_args['do_sample'] = do_sample
+        #     generate_args['temperature'] = temperature
+        #     generate_args['top_p'] = top_p
 
         response_batch_enc = self.model.generate(**generate_args)
 
         response_batch_str = [self.tokenizer.decode(response_enc, skip_special_tokens=True) for response_enc in response_batch_enc]
+        
+        # Clean up to free memory
+        del context_batch_enc
+        del generate_args
+        torch.cuda.empty_cache()
+        
         for i in range(len(response_batch_str)):
             if response_batch_str[i].strip() == "":
                 print(f"Empty response detected from response_batch_enc: {response_batch_enc[i]}")
                 raise ValueError("Empty result detected in the response batch.")
 
         done_batch = [response_enc[-1].item() == self.tokenizer.eos_token_id for response_enc in response_batch_enc]
+        
+        # Final cleanup
+        del response_batch_enc
+        
         return response_batch_str, done_batch

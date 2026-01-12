@@ -1,0 +1,39 @@
+{
+    "generation_model_name": "mistralai/Mistral-7B-Instruct-v0.2",
+    "embedding_model_name": "sentence-transformers/all-MiniLM-L6-v2",
+    "seq2seq_model_name": "google/flan-t5-small",
+    "is_chat_model": true,
+    "instruct_tokens": [
+        "[INST]",
+        "[/INST]"
+    ],
+    "index_builder": {
+        "tokenizer_model_name": "mistralai/Mistral-7B-Instruct-v0.2",
+        "chunk_size": 200,
+        "overlap": 0,
+        "passes": 10,
+        "icl_kb": true,
+        "multi_lingo": false
+    },
+    "ralm": {
+        "expand_query": false,
+        "top_k_docs": 2,
+        "top_k_titles": 7,
+        "system_prompt": "You are a truthful expert question-answering bot and should correctly and concisely answer the following question",
+        "repeat_system_prompt": true,
+        "stride": -1,
+        "query_len": 200,
+        "do_sample": false,
+        "temperature": 1.0,
+        "top_p": 0.1,
+        "num_beams": 2,
+        "max_new_tokens": 25,
+        "batch_size": 8,
+        "kb_10K": false,
+        "icl_kb": true,
+        "icl_kb_incorrect": false,
+        "focus": false,
+        "hybrid_kb": false,
+        "top_k_icl": 0
+    }
+}
