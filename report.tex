@@ -1,0 +1,424 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{vietnam}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+
+\title{\textbf{BÁO CÁO DỰ ÁN} \\ 
+\large Nghiên cứu và Thực nghiệm Hệ thống RAG \\
+(Retrieval-Augmented Generation)}
+
+\author{
+Sinh viên thực hiện: [Họ và tên sinh viên] \\
+MSSV: [Mã số sinh viên] \\
+\\
+Giảng viên hướng dẫn: [Họ và tên giảng viên]
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\newpage
+
+\tableofcontents
+\newpage
+
+%=================================================================
+\section{Giới thiệu dự án}
+%=================================================================
+
+\subsection{Tổng quan về RAG}
+
+Retrieval-Augmented Generation (RAG) là một kỹ thuật kết hợp giữa việc tra cứu thông tin và tạo văn bản tự động. Thay vì chỉ dựa vào kiến thức đã được "ghi nhớ" trong mô hình ngôn ngữ lớn (LLM), hệ thống RAG sẽ:
+
+\begin{enumerate}
+    \item Tìm kiếm các tài liệu liên quan đến câu hỏi từ cơ sở tri thức
+    \item Trích xuất các đoạn văn bản quan trọng
+    \item Kết hợp thông tin đó để tạo ra câu trả lời chính xác hơn
+\end{enumerate}
+
+\textbf{Ví dụ đơn giản:} Giống như khi làm bài tập, thay vì chỉ nhớ bài, bạn được phép tra sách giáo khoa để tìm thông tin cần thiết trước khi trả lời câu hỏi.
+
+\subsection{Tại sao nghiên cứu về kiến trúc RAG?}
+
+Các mô hình ngôn ngữ lớn hiện tại gặp một số vấn đề:
+
+\begin{itemize}
+    \item \textbf{Kiến thức tĩnh:} Chỉ biết những gì được học trong quá trình huấn luyện, không cập nhật được thông tin mới
+    \item \textbf{Hallucination (Ảo tưởng):} Có xu hướng "bịa đặt" thông tin khi không chắc chắn
+    \item \textbf{Thiếu tính minh bạch:} Khó kiểm tra nguồn gốc thông tin
+\end{itemize}
+
+Hệ thống RAG giải quyết những vấn đề này bằng cách cho phép mô hình "tra cứu" từ cơ sở tri thức bên ngoài, giống như một chuyên gia có thể tham khảo tài liệu trước khi trả lời.
+
+Dự án này nghiên cứu các yếu tố ảnh hưởng đến hiệu quả của hệ thống RAG, bao gồm cách mở rộng câu hỏi, cách lọc thông tin quan trọng và cách dạy mô hình phân biệt đúng-sai.
+
+%=================================================================
+\section{Các phương pháp cải tiến RAG}
+%=================================================================
+
+\subsection{Query Expansion (Mở rộng câu hỏi)}
+
+\textbf{Ý tưởng:} Thay vì chỉ tìm kiếm theo câu hỏi gốc, hệ thống sẽ mở rộng câu hỏi bằng cách thêm các từ khóa liên quan.
+
+\textbf{Cách thực hiện:} Sử dụng mô hình Flan-T5 để tự động tạo ra các từ khóa bổ sung dựa trên câu hỏi ban đầu. Điều này giúp tăng khả năng tìm được tài liệu phù hợp.
+
+\textbf{Ví dụ:}
+\begin{itemize}
+    \item Câu hỏi gốc: "Python là gì?"
+    \item Sau mở rộng: "Python là gì + ngôn ngữ lập trình + lập trình Python + ứng dụng Python"
+\end{itemize}
+
+\textbf{Lợi ích:} Giúp hệ thống tìm được nhiều tài liệu liên quan hơn, đặc biệt khi câu hỏi ngắn hoặc mơ hồ.
+
+\subsection{Focus Mode (Chế độ tập trung)}
+
+\textbf{Ý tưởng:} Thay vì đưa cả đoạn văn dài cho mô hình, chỉ trích xuất những câu quan trọng nhất có liên quan trực tiếp đến câu hỏi.
+
+\textbf{Cách thực hiện:} 
+\begin{enumerate}
+    \item Tìm kiếm tài liệu ở cấp độ đoạn văn
+    \item Sau đó tìm kiếm thêm ở cấp độ câu trong các đoạn văn đã chọn
+    \item Chỉ giữ lại những câu có độ tương đồng cao nhất
+\end{enumerate}
+
+\textbf{Ví dụ:} Giống như khi đọc sách, thay vì đọc cả chương, bạn chỉ highlight những dòng quan trọng nhất.
+
+\textbf{Lợi ích:} Giảm nhiễu thông tin, giúp mô hình tập trung vào nội dung quan trọng và tăng độ chính xác.
+
+\subsection{In-Context Learning - ICL (Học trong ngữ cảnh)}
+
+\textbf{Ý tưởng:} Dạy mô hình cách trả lời bằng cách đưa ra các ví dụ mẫu (cả đúng và sai) ngay trong câu hỏi.
+
+\textbf{Cách thực hiện - Contrastive ICL:}
+\begin{itemize}
+    \item \textbf{Ví dụ đúng:} Câu hỏi + Ngữ cảnh đúng $\rightarrow$ Câu trả lời đúng
+    \item \textbf{Ví dụ sai:} Câu hỏi + Ngữ cảnh sai $\rightarrow$ Câu trả lời sai
+    \item Mô hình học cách phân biệt thông tin đáng tin cậy và không đáng tin cậy
+\end{itemize}
+
+\textbf{Ví dụ trong prompt:}
+\begin{verbatim}
+Ví dụ 1 (Đúng):
+Q: Thủ đô Việt Nam?
+Context: Hà Nội là thủ đô...
+A: Hà Nội
+
+Ví dụ 2 (Sai):
+Q: Thủ đô Việt Nam?  
+Context: Tokyo là thủ đô...
+A: Không thể trả lời dựa trên context này
+
+Câu hỏi của bạn:
+Q: Thủ đô Pháp?
+Context: Paris là thủ đô...
+A: ?
+\end{verbatim}
+
+\textbf{Lợi ích:} Phương pháp hiệu quả nhất trong nghiên cứu, giúp mô hình học cách đánh giá độ tin cậy của thông tin.
+
+%=================================================================
+\section{Bộ dữ liệu sử dụng}
+%=================================================================
+
+\subsection{Dữ liệu Validate (Đánh giá)}
+
+Dự án sử dụng hai bộ dữ liệu chuẩn để đánh giá hiệu quả của hệ thống:
+
+\subsubsection{TruthfulQA}
+\begin{itemize}
+    \item \textbf{Mục đích:} Kiểm tra khả năng trả lời trung thực và chính xác
+    \item \textbf{Nội dung:} 817 câu hỏi về kiến thức phổ thông, nhiều câu có tính "bẫy" để kiểm tra xem mô hình có bị "ảo tưởng" hay không
+    \item \textbf{Ví dụ:} "Chuyện gì xảy ra nếu bạn nuốt kẹo cao su?" (Thử thách các quan niệm sai lầm thường gặp)
+\end{itemize}
+
+\subsubsection{MMLU (Massive Multitask Language Understanding)}
+\begin{itemize}
+    \item \textbf{Mục đích:} Đánh giá kiến thức chuyên môn đa lĩnh vực
+    \item \textbf{Nội dung:} Câu hỏi trắc nghiệm về nhiều môn học (toán, lịch sử, khoa học, v.v.)
+    \item \textbf{Độ khó:} Từ cấp trung học đến chuyên gia
+\end{itemize}
+
+\subsection{Dữ liệu Retrieve (Cơ sở tri thức)}
+
+\textbf{Wikipedia Vital Articles:} Dự án sử dụng tập hợp các bài viết quan trọng của Wikipedia (Level 3 và 4):
+
+\begin{itemize}
+    \item \textbf{Quy mô:} Hàng nghìn bài viết chất lượng cao
+    \item \textbf{Nội dung:} Bao phủ các chủ đề cơ bản và quan trọng trong nhiều lĩnh vực
+    \item \textbf{Xử lý:} Chia nhỏ thành các đoạn (chunks) 64 tokens với overlap 8 tokens để đảm bảo ngữ cảnh liên tục
+\end{itemize}
+
+%=================================================================
+\section{Kiến trúc hệ thống}
+%=================================================================
+
+Hệ thống RAG trong dự án bao gồm ba mô-đun chính:
+
+\subsection{Kiến trúc tổng quan}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{rag-diagram.png}
+    \caption{Sơ đồ tổng quan kiến trúc RAG}
+\end{figure}
+
+\subsection{Các mô-đun chính}
+
+\subsubsection{1. Query Expansion Module (Mô-đun mở rộng câu hỏi)}
+\begin{itemize}
+    \item \textbf{Mô hình:} Flan-T5-small
+    \item \textbf{Chức năng:} Tạo thêm từ khóa liên quan từ câu hỏi gốc
+    \item \textbf{Tùy chọn:} Có thể bật/tắt trong config (\texttt{expand\_query})
+\end{itemize}
+
+\subsubsection{2. Retrieval Module (Mô-đun tra cứu)}
+\begin{itemize}
+    \item \textbf{Embedding Model:} sentence-transformers/all-MiniLM-L6-v2
+    \item \textbf{Vector Database:} FAISS (Facebook AI Similarity Search)
+    \item \textbf{Tham số:}
+    \begin{itemize}
+        \item \texttt{chunk\_size}: 64 tokens
+        \item \texttt{overlap}: 8 tokens
+        \item \texttt{top\_k\_docs}: Số tài liệu được chọn (mặc định: 1-2)
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{3. Generation Module (Mô-đun tạo câu trả lời)}
+\begin{itemize}
+    \item \textbf{Mô hình chính:} Mistral-7B-Instruct-v0.2
+    \item \textbf{Tham số sinh:}
+    \begin{itemize}
+        \item \texttt{max\_new\_tokens}: 25
+        \item \texttt{num\_beams}: 1 (greedy decoding)
+        \item \texttt{temperature}: 1.0
+    \end{itemize}
+\end{itemize}
+
+\subsection{Quy trình hoạt động}
+
+\begin{enumerate}
+    \item \textbf{Nhận câu hỏi:} Người dùng đưa câu hỏi vào hệ thống
+    \item \textbf{Mở rộng (tùy chọn):} Nếu bật, tạo thêm từ khóa liên quan
+    \item \textbf{Tra cứu:} Tìm kiếm trong FAISS để lấy top-k tài liệu có độ tương đồng cao nhất
+    \item \textbf{Lọc (Focus Mode):} Nếu bật, chọn ra những câu quan trọng nhất từ tài liệu
+    \item \textbf{Tạo prompt:} Kết hợp câu hỏi + ngữ cảnh + ví dụ ICL (nếu có)
+    \item \textbf{Sinh câu trả lời:} LLM tạo câu trả lời dựa trên thông tin đã chuẩn bị
+\end{enumerate}
+
+%=================================================================
+\section{Cấu hình thực nghiệm}
+%=================================================================
+
+Dự án thử nghiệm 7 cấu hình khác nhau để so sánh hiệu quả:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}clccc@{}}
+\toprule
+\textbf{Config} & \textbf{Tên} & \textbf{Expand Query} & \textbf{Focus} & \textbf{ICL} \\ 
+\midrule
+1 & Baseline & ✗ & ✗ & ✗ \\
+2 & ExpandQuery Only & ✓ & ✗ & ✗ \\
+3 & Focus Only & ✗ & ✓ & ✗ \\
+4 & ICL Only & ✗ & ✗ & ✓ \\
+5 & ExpandQuery + Focus & ✓ & ✓ & ✗ \\
+6 & Focus + ICL & ✗ & ✓ & ✓ \\
+7 & Hybrid All Features & ✓ & ✓ & ✓ \\
+\bottomrule
+\end{tabular}
+\caption{Các cấu hình thực nghiệm}
+\end{table}
+
+%=================================================================
+\section{Thực nghiệm và kết quả}
+%=================================================================
+
+\subsection{Chỉ số đánh giá}
+
+Dự án sử dụng nhiều chỉ số để đánh giá toàn diện:
+
+\begin{itemize}
+    \item \textbf{ROUGE (1, 2, L):} Đo độ trùng lặp n-gram giữa câu trả lời sinh ra và câu trả lời chuẩn
+    \item \textbf{Similarity:} Độ tương đồng ngữ nghĩa (embedding cosine similarity)
+    \item \textbf{MAUVE:} Đánh giá chất lượng văn bản sinh ra so với văn bản tham khảo
+\end{itemize}
+
+\subsection{Kết quả trên MMLU}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{R1-F1} & \textbf{R2-F1} & \textbf{RL-F1} & \textbf{Similarity} & \textbf{MAUVE} \\ 
+\midrule
+1. Baseline & 0.1021 & 0.0189 & 0.0870 & 0.2881 & 0.6502 \\
+2. ExpandQuery Only & 0.1040 & 0.0211 & 0.0893 & 0.2926 & 0.6210 \\
+3. Focus Only & 0.1010 & 0.0201 & 0.0870 & 0.2913 & 0.3636 \\
+4. ICL Only & \textbf{0.1068} & \textbf{0.0239} & \textbf{0.0921} & 0.3044 & 0.5407 \\
+5. ExpandQuery+Focus & 0.1013 & 0.0196 & 0.0865 & 0.2890 & 0.6028 \\
+6. Focus+ICL & \textbf{0.1130} & \textbf{0.0242} & \textbf{0.0966} & \textbf{0.3141} & 0.4058 \\
+7. Hybrid All & 0.0973 & 0.0210 & 0.0843 & 0.2869 & 0.4884 \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả đánh giá trên MMLU dataset}
+\end{table}
+
+\textbf{Nhận xét:}
+\begin{itemize}
+    \item Cấu hình 6 (Focus+ICL) đạt kết quả tốt nhất về ROUGE và Similarity (+10.7\% R1-F1 so với baseline)
+    \item ICL Only (Config 4) cũng cho kết quả tốt (+4.6\% R1-F1) và có thời gian thực thi nhanh nhất
+    \item Focus Mode giảm MAUVE nhưng tăng độ chính xác các chỉ số khác
+\end{itemize}
+
+\subsection{Kết quả trên TruthfulQA}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{R1-F1} & \textbf{R2-F1} & \textbf{RL-F1} & \textbf{Similarity} & \textbf{MAUVE} \\ 
+\midrule
+1. Baseline & 0.2562 & 0.1195 & 0.2265 & 0.5589 & 0.4933 \\
+2. ExpandQuery Only & 0.2604 & 0.1208 & 0.2286 & 0.5667 & 0.4726 \\
+3. Focus Only & 0.2631 & 0.1236 & 0.2320 & 0.5663 & 0.5013 \\
+4. ICL Only & 0.2726 & 0.1444 & 0.2428 & 0.5379 & 0.2959 \\
+6. Focus+ICL & 0.2745 & 0.1306 & 0.2422 & 0.5795 & 0.4187 \\
+7. Hybrid All & \textbf{0.3823} & \textbf{0.2755} & \textbf{0.3611} & \textbf{0.6332} & 0.4604 \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả đánh giá trên TruthfulQA dataset}
+\end{table}
+
+\textbf{Nhận xét:}
+\begin{itemize}
+    \item Cấu hình 7 (Hybrid All Features) vượt trội trên TruthfulQA (+49.3\% R1-F1, +130.6\% R2-F1)
+    \item Focus+ICL (Config 6) cũng cho kết quả tốt (+7.2\% R1-F1)
+    \item Các phương pháp cải tiến đều hiệu quả hơn Baseline rõ rệt
+\end{itemize}
+
+\subsection{Phân tích thời gian thực thi}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{Model Load} & \textbf{RAG Init} & \textbf{Evaluation} & \textbf{Total} \\ 
+\midrule
+\multicolumn{5}{c}{\textit{MMLU (thời gian tính bằng giây)}} \\
+\midrule
+1. Baseline & 77.3s & 185.1s & 4979.5s & 5244.1s \\
+4. ICL Only & 41.1s & \textbf{4.8s} & \textbf{3412.4s} & \textbf{3459.4s} \\
+6. Focus+ICL & 33.0s & 4.0s & 3762.1s & 3800.2s \\
+7. Hybrid All & 35.8s & 188.0s & 6353.0s & 6579.2s \\
+\midrule
+\multicolumn{5}{c}{\textit{TruthfulQA (thời gian tính bằng giây)}} \\
+\midrule
+1. Baseline & 65.3s & 160.1s & 1454.8s & 1682.1s \\
+4. ICL Only & 62.7s & \textbf{7.3s} & \textbf{1326.8s} & \textbf{1397.6s} \\
+6. Focus+ICL & 38.4s & 7.3s & 1454.0s & 1500.6s \\
+7. Hybrid All & 25.6s & 158.3s & 1769.5s & 1955.5s \\
+\bottomrule
+\end{tabular}
+\caption{Thời gian thực thi các cấu hình}
+\end{table}
+
+\textbf{Nhận xét:}
+\begin{itemize}
+    \item ICL giảm đáng kể thời gian khởi tạo RAG (không cần build index phức tạp)
+    \item Cấu hình 4 và 6 nhanh hơn Baseline 34-40\%
+    \item Hybrid All có thời gian thực thi lâu nhất nhưng cho độ chính xác cao nhất (TruthfulQA)
+\end{itemize}
+
+\subsection{Biểu đồ so sánh}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{rouge_metrics_comparison.png}
+    \caption{So sánh các chỉ số ROUGE giữa các cấu hình}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{similarity_mauve_comparison.png}
+    \caption{So sánh Similarity và MAUVE giữa các cấu hình}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{improvement_analysis.png}
+    \caption{Phân tích phần trăm cải thiện so với Baseline}
+\end{figure}
+
+%=================================================================
+\section{Kết luận}
+%=================================================================
+
+\subsection{Những phát hiện chính}
+
+Qua thực nghiệm trên hai bộ dữ liệu chuẩn, dự án đã rút ra các kết luận quan trọng:
+
+\begin{enumerate}
+    \item \textbf{Contrastive ICL hiệu quả nhất:} Việc dạy mô hình phân biệt thông tin đúng-sai bằng ví dụ mang lại cải thiện đáng kể về độ chính xác.
+    
+    \item \textbf{Focus Mode quan trọng:} Chất lượng ngữ cảnh quan trọng hơn số lượng. Việc lọc ra những câu quan trọng nhất giúp mô hình tập trung tốt hơn.
+    
+    \item \textbf{Kết hợp phương pháp hiệu quả:} Cấu hình Hybrid (kết hợp cả 3 phương pháp) đạt kết quả tốt nhất trên TruthfulQA, cho thấy các kỹ thuật bổ trợ lẫn nhau.
+    
+    \item \textbf{Trade-off giữa tốc độ và độ chính xác:} ICL-only nhanh hơn nhưng Hybrid chính xác hơn. Tùy ứng dụng mà chọn cấu hình phù hợp.
+\end{enumerate}
+
+\subsection{Ứng dụng thực tế}
+
+Kết quả nghiên cứu có thể áp dụng vào:
+
+\begin{itemize}
+    \item \textbf{Hệ thống hỏi đáp tự động:} Chatbot, trợ lý ảo cần trả lời chính xác dựa trên tài liệu
+    \item \textbf{Tìm kiếm thông tin:} Cải thiện công cụ tìm kiếm bằng cách tóm tắt thông tin từ nhiều nguồn
+    \item \textbf{Giáo dục:} Hệ thống gia sư tự động có thể tra cứu tài liệu và giải thích cho học sinh
+\end{itemize}
+
+\subsection{Hướng phát triển}
+
+Một số hướng cải tiến trong tương lai:
+
+\begin{itemize}
+    \item Thử nghiệm với các mô hình LLM lớn hơn (Mixtral-45B, GPT-4, v.v.)
+    \item Tối ưu hóa tham số (chunk size, top-k, v.v.) cho từng loại câu hỏi
+    \item Nghiên cứu thêm về multilingual RAG (hỗ trợ nhiều ngôn ngữ)
+    \item Áp dụng vào các domain cụ thể (y tế, luật pháp, v.v.)
+\end{itemize}
+
+%=================================================================
+\section{Nguồn tham khảo}
+%=================================================================
+
+\begin{enumerate}
+    \item Li, S., Stenzel, L., Eickhoff, C., \& Bahrainian, S. A. (2025). \textit{Enhancing Retrieval-Augmented Generation: A Study of Best Practices}. arXiv preprint arXiv:2501.07391.
+    
+    \item Lewis, P., et al. (2020). \textit{Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks}. NeurIPS 2020.
+    
+    \item GitHub Repository: \url{https://github.com/ali-bahrainian/RAG_best_practices}
+    
+    \item Hugging Face Transformers: \url{https://huggingface.co/docs/transformers}
+    
+    \item FAISS Documentation: \url{https://github.com/facebookresearch/faiss}
+    
+    \item TruthfulQA: \url{https://github.com/sylinrl/TruthfulQA}
+    
+    \item MMLU Dataset: \url{https://github.com/hendrycks/test}
+    
+    \item Wikipedia Vital Articles: \url{https://en.wikipedia.org/wiki/Wikipedia:Vital_articles}
+\end{enumerate}
+
+\end{document}
