@@ -31,79 +31,73 @@ Giảng viên hướng dẫn: [Họ và tên giảng viên]
 
 %=================================================================
 \section{Giới thiệu dự án}
-%=================================================================
 
-\subsection{Tổng quan về RAG}
+\subsection{Tổng quan về Retrieval-Augmented Generation}
 
-Retrieval-Augmented Generation (RAG) là một kỹ thuật kết hợp giữa việc tra cứu thông tin và tạo văn bản tự động. Thay vì chỉ dựa vào kiến thức đã được "ghi nhớ" trong mô hình ngôn ngữ lớn (LLM), hệ thống RAG sẽ:
+Retrieval-Augmented Generation (RAG) là một kiến trúc kết hợp giữa mô hình ngôn ngữ lớn (Large Language Model -- LLM) và hệ thống truy hồi thông tin (Information Retrieval). Thay vì chỉ dựa vào tri thức được học trong quá trình huấn luyện, RAG cho phép mô hình truy xuất thông tin từ một cơ sở tri thức bên ngoài trong quá trình sinh câu trả lời.
 
+Cụ thể, quy trình của một hệ thống RAG bao gồm các bước chính sau:
 \begin{enumerate}
-    \item Tìm kiếm các tài liệu liên quan đến câu hỏi từ cơ sở tri thức
-    \item Trích xuất các đoạn văn bản quan trọng
-    \item Kết hợp thông tin đó để tạo ra câu trả lời chính xác hơn
+    \item Truy hồi các tài liệu liên quan đến câu hỏi từ cơ sở tri thức.
+    \item Trích xuất các đoạn hoặc câu văn có mức độ liên quan cao.
+    \item Kết hợp thông tin truy hồi được với câu hỏi ban đầu để sinh ra câu trả lời.
 \end{enumerate}
 
-\textbf{Ví dụ đơn giản:} Giống như khi làm bài tập, thay vì chỉ nhớ bài, bạn được phép tra sách giáo khoa để tìm thông tin cần thiết trước khi trả lời câu hỏi.
+Cách tiếp cận này giúp cải thiện độ chính xác, giảm hiện tượng sinh thông tin sai lệch và tăng khả năng kiểm soát nguồn tri thức của mô hình.
 
-\subsection{Tại sao nghiên cứu về kiến trúc RAG?}
 
-Các mô hình ngôn ngữ lớn hiện tại gặp một số vấn đề:
+\subsection{Động cơ nghiên cứu kiến trúc RAG}
 
+Mặc dù các mô hình ngôn ngữ lớn đạt được nhiều thành tựu đáng kể, chúng vẫn tồn tại một số hạn chế cơ bản:
 \begin{itemize}
-    \item \textbf{Kiến thức tĩnh:} Chỉ biết những gì được học trong quá trình huấn luyện, không cập nhật được thông tin mới
-    \item \textbf{Hallucination (Ảo tưởng):} Có xu hướng "bịa đặt" thông tin khi không chắc chắn
-    \item \textbf{Thiếu tính minh bạch:} Khó kiểm tra nguồn gốc thông tin
+    \item \textbf{Tri thức tĩnh:} Kiến thức của mô hình bị giới hạn tại thời điểm huấn luyện và không thể tự động cập nhật.
+    \item \textbf{Hiện tượng hallucination:} Mô hình có xu hướng tạo ra thông tin không chính xác khi thiếu ngữ cảnh đáng tin cậy.
+    \item \textbf{Thiếu khả năng truy vết nguồn:} Khó xác định cơ sở tri thức mà mô hình sử dụng để sinh câu trả lời.
 \end{itemize}
 
-Hệ thống RAG giải quyết những vấn đề này bằng cách cho phép mô hình "tra cứu" từ cơ sở tri thức bên ngoài, giống như một chuyên gia có thể tham khảo tài liệu trước khi trả lời.
+Kiến trúc RAG được đề xuất nhằm khắc phục các hạn chế trên thông qua việc tích hợp cơ chế truy hồi tài liệu từ nguồn tri thức bên ngoài. 
 
-Dự án này nghiên cứu các yếu tố ảnh hưởng đến hiệu quả của hệ thống RAG, bao gồm cách mở rộng câu hỏi, cách lọc thông tin quan trọng và cách dạy mô hình phân biệt đúng-sai.
+Dự án này tập trung nghiên cứu và thực nghiệm các phương pháp cải tiến RAG, nhằm đánh giá tác động của từng thành phần đến chất lượng sinh câu trả lời, bao gồm mở rộng truy vấn, lọc ngữ cảnh và học trong ngữ cảnh (In-Context Learning).
+
 
 %=================================================================
 \section{Các phương pháp cải tiến RAG}
 %=================================================================
 
-\subsection{Query Expansion (Mở rộng câu hỏi)}
+\subsection{Query Expansion (Mở rộng truy vấn)}
 
-\textbf{Ý tưởng:} Thay vì chỉ tìm kiếm theo câu hỏi gốc, hệ thống sẽ mở rộng câu hỏi bằng cách thêm các từ khóa liên quan.
+\textbf{Ý tưởng:} Query Expansion nhằm cải thiện chất lượng truy hồi bằng cách mở rộng câu hỏi ban đầu với các từ khóa hoặc cụm từ có liên quan về mặt ngữ nghĩa.
 
-\textbf{Cách thực hiện:} Sử dụng mô hình Flan-T5 để tự động tạo ra các từ khóa bổ sung dựa trên câu hỏi ban đầu. Điều này giúp tăng khả năng tìm được tài liệu phù hợp.
+\textbf{Phương pháp thực hiện:} Dự án sử dụng mô hình Flan-T5 để sinh thêm các từ khóa bổ trợ dựa trên nội dung câu hỏi. Các truy vấn mở rộng này được sử dụng song song với truy vấn gốc trong quá trình tìm kiếm tài liệu.
 
-\textbf{Ví dụ:}
-\begin{itemize}
-    \item Câu hỏi gốc: "Python là gì?"
-    \item Sau mở rộng: "Python là gì + ngôn ngữ lập trình + lập trình Python + ứng dụng Python"
-\end{itemize}
+\textbf{Lợi ích:} Phương pháp này giúp tăng độ bao phủ của truy vấn, đặc biệt hiệu quả đối với các câu hỏi ngắn, mơ hồ hoặc thiếu ngữ cảnh.
 
-\textbf{Lợi ích:} Giúp hệ thống tìm được nhiều tài liệu liên quan hơn, đặc biệt khi câu hỏi ngắn hoặc mơ hồ.
 
-\subsection{Focus Mode (Chế độ tập trung)}
+\subsection{Focus Mode (Lọc ngữ cảnh)}
 
-\textbf{Ý tưởng:} Thay vì đưa cả đoạn văn dài cho mô hình, chỉ trích xuất những câu quan trọng nhất có liên quan trực tiếp đến câu hỏi.
+\textbf{Ý tưởng:} Thay vì cung cấp toàn bộ đoạn văn dài cho mô hình sinh, Focus Mode chỉ giữ lại các câu có mức độ liên quan cao nhất đối với câu hỏi.
 
-\textbf{Cách thực hiện:} 
+\textbf{Phương pháp thực hiện:}
 \begin{enumerate}
-    \item Tìm kiếm tài liệu ở cấp độ đoạn văn
-    \item Sau đó tìm kiếm thêm ở cấp độ câu trong các đoạn văn đã chọn
-    \item Chỉ giữ lại những câu có độ tương đồng cao nhất
+    \item Truy hồi tài liệu ở mức đoạn văn.
+    \item Thực hiện truy hồi bổ sung ở mức câu trong các đoạn đã chọn.
+    \item Lựa chọn các câu có độ tương đồng ngữ nghĩa cao nhất làm ngữ cảnh đầu vào.
 \end{enumerate}
 
-\textbf{Ví dụ:} Giống như khi đọc sách, thay vì đọc cả chương, bạn chỉ highlight những dòng quan trọng nhất.
+\textbf{Lợi ích:} Giảm nhiễu thông tin trong ngữ cảnh, từ đó giúp mô hình tập trung vào nội dung cốt lõi và cải thiện độ chính xác của câu trả lời.
 
-\textbf{Lợi ích:} Giảm nhiễu thông tin, giúp mô hình tập trung vào nội dung quan trọng và tăng độ chính xác.
+\subsection{In-Context Learning (ICL)}
 
-\subsection{In-Context Learning - ICL (Học trong ngữ cảnh)}
+\textbf{Ý tưởng:} In-Context Learning hướng dẫn mô hình cách phản hồi thông qua việc cung cấp các ví dụ mẫu trực tiếp trong prompt.
 
-\textbf{Ý tưởng:} Dạy mô hình cách trả lời bằng cách đưa ra các ví dụ mẫu (cả đúng và sai) ngay trong câu hỏi.
-
-\textbf{Cách thực hiện - Contrastive ICL:}
+\textbf{Contrastive ICL:} Dự án áp dụng phương pháp Contrastive ICL, trong đó prompt bao gồm cả ví dụ đúng và ví dụ sai:
 \begin{itemize}
-    \item \textbf{Ví dụ đúng:} Câu hỏi + Ngữ cảnh đúng $\rightarrow$ Câu trả lời đúng
-    \item \textbf{Ví dụ sai:} Câu hỏi + Ngữ cảnh sai $\rightarrow$ Câu trả lời sai
-    \item Mô hình học cách phân biệt thông tin đáng tin cậy và không đáng tin cậy
+    \item Ví dụ đúng: Câu hỏi kèm ngữ cảnh phù hợp và câu trả lời chính xác.
+    \item Ví dụ sai: Câu hỏi kèm ngữ cảnh không phù hợp và phản hồi từ chối trả lời.
 \end{itemize}
 
-\textbf{Ví dụ trong prompt:}
+Cách tiếp cận này giúp mô hình học được cách đánh giá độ tin cậy của ngữ cảnh, từ đó hạn chế hiện tượng sinh câu trả lời sai lệch.
+
 \begin{verbatim}
 Ví dụ 1 (Đúng):
 Q: Thủ đô Việt Nam?
@@ -274,10 +268,11 @@ Dự án sử dụng nhiều chỉ số để đánh giá toàn diện:
 
 \textbf{Nhận xét:}
 \begin{itemize}
-    \item Cấu hình 6 (Focus+ICL) đạt kết quả tốt nhất về ROUGE và Similarity (+10.7\% R1-F1 so với baseline)
-    \item ICL Only (Config 4) cũng cho kết quả tốt (+4.6\% R1-F1) và có thời gian thực thi nhanh nhất
-    \item Focus Mode giảm MAUVE nhưng tăng độ chính xác các chỉ số khác
+    \item Cấu hình Focus + ICL đạt hiệu năng cao nhất trên tập MMLU, cho thấy vai trò quan trọng của việc lọc ngữ cảnh kết hợp với hướng dẫn sinh câu trả lời.
+    \item ICL-only đạt kết quả tốt với chi phí tính toán thấp, phù hợp cho các hệ thống yêu cầu thời gian phản hồi nhanh.
+    \item Focus Mode giúp cải thiện các chỉ số độ chính xác, mặc dù làm suy giảm chỉ số MAUVE trong một số trường hợp.
 \end{itemize}
+
 
 \subsection{Kết quả trên TruthfulQA}
 

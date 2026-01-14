@@ -1,103 +1,105 @@
 # RAG Best Practices
 
-This repository is the official implementation of the paper [Enhancing Retrieval-Augmented Generation: A Study of Best Practices](https://arxiv.org/abs/2501.07391)
+Framework đánh giá Retrieval-Augmented Generation (RAG) với nhiều cấu hình khác nhau.
 
-## Overview
-This repository implements a **Retrieval-Augmented Generation (RAG)** system to assess the impact of various RAG components and configurations individually. The framework expands user queries, retrieves relevant contexts, and generates responces using a Large Language Model (LLM).
+## Giới thiệu
 
-The RAG framework combines:
-1. **Query Expansion Module**: Expands the query using a language model (LM).
-2. **Retrieval Module**: Retrieves similar documents or sentences.
-3. **Generative LLM**: Generates the final answer based on the retrieved contexts.
+Dự án này triển khai hệ thống RAG để đánh giá tác động của các thành phần RAG khác nhau:
+- **Query Expansion**: Mở rộng truy vấn để retrieve thêm context
+- **Retrieval**: Tìm kiếm document/câu tương liên quan
+- **Generation**: Sinh câu trả lời dựa trên context retrieved
 
-<p align="center">
-  <img src="rag-diagram.png" alt="RAG Framework Overview" width="800">
-</p>
+## Cài đặt
 
-## Configuration
-This project provides a flexible configuration system to customize the RAG system. Key settings include:
 ```bash
-base_config = {
-    # Language Model Settings
-    "generation_model_name": "mistralai/Mistral-7B-Instruct-v0.2",  # 7B-parameter instruction-tuned LLM
-    "embedding_model_name": "sentence-transformers/all-MiniLM-L6-v2",  # Model for document embeddings
-    "seq2seq_model_name": "google/flan-t5-small",  # Small T5 model for query expansion
-    "is_chat_model": True,  # Indicates if the model follows chat-based input/output
+# 1. Cài đặt dependencies
+pip install -r requirements.txt
 
-    # Prompt Design
-    "instruct_tokens": ("[INST]", "[/INST]"),  # Instruction tokens to guide the LLM
+# Hoặc (lean version - chỉ PyTorch):
+pip install -r requirements_colab.txt
 
-    # Document Indexing and Chunking
-    "index_builder": {
-        "tokenizer_model_name": None,  # Defaults to the embedding model tokenizer
-        "chunk_size": 64,              # Number of tokens per document chunk
-        "overlap": 8,                  # Overlap of tokens between chunks for context continuity
-        "passes": 10,                  # Number of document passes for indexing
-        "icl_kb": False,               # Contrastive In-Context Learning knowledge base (disabled)
-        "multi_lingo": False           # Multilingual knowledge base support (disabled)
-    },
-
-    # Retrieval-Augmented Language Model (RALM) Settings
-    "ralm": {
-        "expand_query": False,         # Query expansion techniques (disabled)
-        "top_k_docs": 2,               # Top-2 documents retrieved for relevance
-        "top_k_titles": 7,             # Top-7 titles retrieved for Step 1 retrieval
-        "system_prompt": ......,       # System prompt for generating responses
-        "repeat_system_prompt": True,  # Repeat system prompt to guide generation
-        "stride": -1,                  # Retrieval stride: -1 means no fixed stride
-        "query_len": 200,              # Maximum query length in tokens
-        "do_sample": False,            # Disable sampling for deterministic outputs
-        "temperature": 1.0,            # Control randomness in generation
-        "top_p": 0.1,                  # Nucleus sampling: considers tokens in top-10% probability mass
-        "num_beams": 2,                # Number of beams for beam search
-        "max_new_tokens": 25,          # Limit the number of generated tokens
-        "batch_size": 8,               # Batch size for processing
-        "kb_10K": False,               # 10K knowledge base support (disabled)
-        "icl_kb": False,               # ICL knowledge base support (disabled)
-        "icl_kb_incorrect": False,     # Incorrect ICL knowledge base (disabled)
-        "focus": False                 # Focus mode for sentence-level retrieval (disabled)
-    }
-}
-
+# 2. Tải knowledge base từ Google Drive
+# https://drive.google.com/drive/folders/1_-2PHI0-Wz1VjnW5Yvy5Ne9C7mMWk1nf
+# Giải nén vào thư mục resources/
 ```
 
-## Installation
-1. **Clone mixtral-offloading repository**:
-   ```bash
-   git clone https://github.com/dvmazur/mixtral-offloading.git
-   ```
-2. **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+## Sử dụng
 
-    Note: The codebase uses PyTorch (torch) only. TensorFlow/keras entries in `requirements.txt` are not required to run this project and may trigger GPU/XLA warnings on local machines. To avoid TensorFlow installation and keep dependency versions unchanged, you can install the lean set from `requirements_colab.txt` instead:
-
-    ```bash
-    pip install -r requirements_colab.txt
-    ```
-
-    This preserves the specified versions while installing only the PyTorch-centric packages used by the code.
-3. **Download Knowledge Sources**:
-
-    Download the necessary knowledge base files from the provided [Google Drive link](https://drive.google.com/drive/folders/1_-2PHI0-Wz1VjnW5Yvy5Ne9C7mMWk1nf?usp=drive_link).
-    Unzip the downloaded files into the `resources/` directory.
-
-
-## Project Structure
-Your final directory structure should look like this:
+### Chạy đánh giá trên TruthfulQA:
+```bash
+python evaluation.py --dataset truthfulqa --config-set test_suite
 ```
-RAG_best_practices/ 
-│
-│ ├── mixtral-offloading/        # Mixtral model offloading library
-│
-├── model/                       # Core RAG implementation 
-│ ├── index_builder.py           # Builds document index 
-│ ├── language_model.py          # Setting LLM to generate text
-│ ├── model_loader.py            # Loads Mixtral LLM 
-│ ├── rag.py                     # Main RAG pipeline 
-│ ├── retriever.py               # Retrieves documents 
-│ ├── config.py                  # Configuration setup 
+
+### Chạy trên MMLU:
+```bash
+python evaluation.py --dataset mmlu --config-set test_suite
+```
+
+### Options:
+- `--dataset`: truthfulqa hoặc mmlu
+- `--config-set`: test_suite, run1, hoặc run2
+- `--num-samples`: Số lượng samples để test nhanh
+- `--quant`: 4bit, 8bit, hoặc None
+- `--output-dir`: Thư mục output (mặc định: outputs)
+- `--seed`: Random seed (mặc định: 42)
+
+## Cấu hình
+
+Các cấu hình được định nghĩa trong [config.py](config.py):
+
+### Test Suite (7 cấu hình):
+1. **Baseline**: RAG cơ bản
+2. **ExpandQuery_Only**: Query expansion
+3. **Focus_Only**: Focus mechanism
+4. **ICL_Only**: In-Context Learning
+5. **ExpandQuery_Focus**: Kết hợp expansion + focus
+6. **Focus_ICL**: Kết hợp focus + ICL
+7. **Hybrid_All_Features**: Tất cả tính năng
+
+### Models mặc định:
+- Generation: `mistralai/Mistral-7B-Instruct-v0.2`
+- Embedding: `sentence-transformers/all-MiniLM-L6-v2`
+- Seq2seq: `google/flan-t5-small`
+
+Chi tiết cấu hình xem [config.md](config.md).
+
+## Kết quả
+
+Kết quả được lưu trong thư mục `outputs/{dataset}/`:
+```
+outputs/
+├── mmlu/
+│   └── runtest_suite_{timestamp}/
+│       ├── config_{name}.json
+│       ├── eval_results_{name}.json
+│       ├── eval_results_all.json
+│       └── timing_summary.json
+└── truthfulqa/
+    └── runtest_suite_{timestamp}/
+```
+
+### Metrics:
+- **ROUGE** (r1f1, r2f1, rLf1): Độ trùng khớp văn bản
+- **Similarity**: Độ tương đồng ngữ nghĩa
+- **MAUVE**: Khoảng cách phân phối văn bản
+- **Timing**: Thời gian model loading, RAG init, evaluation
+
+## Cấu trúc Project
+
+```
+RAG_best_practices/
+├── model/                    # Core RAG implementation
+│   ├── index_builder.py     # Xây dựng document index
+│   ├── retriever.py         # Retrieve documents
+│   ├── language_model.py    # LLM generation
+│   ├── model_loader.py      # Load models
+│   └── rag.py               # Main RAG pipeline
+├── mixtral-offloading/      # Mixtral model offloading
+├── resources/               # Knowledge base files
+├── outputs/                 # Kết quả đánh giá
+├── config.py                # Cấu hình hệ thống
+├── evaluation.py            # Script đánh giá chính
+└── config.md                # Chi tiết cấu hình 
 │ ├── evaluation.py              # Runs the full RAG pipeline 
 │ ├── requirements.txt           # Python dependencies 
 │
